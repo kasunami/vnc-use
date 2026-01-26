@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test HITL callback integration."""
 
-
 from vnc_use.agent import VncUseAgent
 
 

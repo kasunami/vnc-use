@@ -12,7 +12,6 @@ from vncdotool import api as vnc_api
 
 from ..types import ActionResult
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -359,7 +358,7 @@ class VNCController:
             # Still try to capture screenshot for debugging
             try:
                 screenshot = self.screenshot_png()
-            except:
+            except Exception:
                 screenshot = b""
 
             return ActionResult(

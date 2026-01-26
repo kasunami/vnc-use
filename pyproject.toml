@@ -22,8 +22,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=7.0.0",
+    "mypy>=1.19.1",
+    "ruff>=0.14.0",
+    "bandit>=1.9.3",
+    "pre-commit>=4.5.1",
 ]
 keyring = [
     "keyring>=24.0",
@@ -39,7 +44,119 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# SonarQube-compatible output (junit.xml and coverage.xml)
+# Usage: pytest --junitxml=junit.xml --cov=src --cov-report=xml
+addopts = "--junitxml=junit.xml"
+markers = [
+    "external: marks tests that require network access to external services",
+    "slow: marks tests that may take several seconds due to network latency",
+]
+
+[tool.coverage.run]
+# Use relative paths in coverage.xml for SonarQube compatibility
+relative_files = true
+source = ["src"]
+# Exclude CLI scripts that are hard to unit test
+omit = [
+    "src/vnc_use/cli.py",
+    "src/vnc_use/mcp_cli.py",
+    "src/vnc_use/credentials_cli.py",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "S",    # flake8-bandit (security) - for SARIF/SonarQube
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise from inside except without explicit exception chaining
+    "B905",   # zip without strict parameter (Python 3.10+)
+    "SIM105", # use contextlib.suppress
+    "SIM108", # use ternary operator instead of if-else
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # assert in tests is expected
+    "S106",   # hardcoded test passwords are intentional
+    "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls are intentional in test setup
+    "S607",   # partial executable paths (docker-compose) are intentional
+]
+"**/test_*.py" = [
+    "S101",   # assert in tests is expected
+    "S106",   # hardcoded test passwords are intentional
+    "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls are intentional in test setup
+    "S607",   # partial executable paths (docker-compose) are intentional
+]
+# CLI scripts use subprocess and argparse by design
+"**/cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+    "S607",   # partial path is intentional for system commands
+]
+"**/mcp_cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+    "S607",   # partial path is intentional for system commands
+]
+"**/credentials_cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Ignore errors for external dependencies without stubs
+[[tool.mypy.overrides]]
+module = [
+    "langgraph.*",
+    "langgraph_checkpoint_sqlite.*",
+    "google.*",
+    "vncdotool.*",
+    "fastmcp.*",
+    "langchain_core.*",
+    "langchain_anthropic.*",
+    "PIL.*",
+    "keyring.*",
+]
+ignore_missing_imports = true
+
+# Relax type checking in tests
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_errors = true

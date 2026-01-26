@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +38,7 @@ class RunLogger:
         logger.info(f"Created run directory: {self.run_dir}")
 
         # Initialize metadata
-        self.metadata = {
+        self.metadata: dict[str, Any] = {
             "run_id": self.run_id,
             "task": task,
             "start_time": datetime.utcnow().isoformat(),
@@ -351,7 +350,7 @@ class RunLogger:
             ("secret", "***REDACTED***"),
         ]
 
-        for pattern, replacement in patterns:
+        for pattern, _replacement in patterns:
             if pattern in data_str.lower():
                 # More sophisticated redaction could be added here
                 pass

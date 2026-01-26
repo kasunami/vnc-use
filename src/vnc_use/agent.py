@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -14,6 +14,8 @@ from .logging_utils import RunLogger
 from .safety import HITLGate, requires_confirmation, should_block
 from .types import CUAState
 
+if TYPE_CHECKING:
+    from .planners.base import BasePlanner
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +35,7 @@ class VncUseAgent:
         step_limit: int = 40,
         seconds_timeout: int = 300,
         hitl_mode: bool = True,
-        hitl_callback: Callable[[dict, list], Awaitable[bool]] | None = None,
+        hitl_callback: Callable[[dict, list], Coroutine[Any, Any, bool]] | None = None,
         api_key: str | None = None,
         model_provider: str = "gemini",
     ) -> None:
@@ -88,7 +90,7 @@ class VncUseAgent:
         elif model_provider.lower() == "anthropic":
             from .planners import AnthropicPlanner
 
-            self.planner: BasePlanner = AnthropicPlanner(
+            self.planner = AnthropicPlanner(
                 excluded_actions=excluded_actions,
                 api_key=api_key,
             )
@@ -104,11 +106,11 @@ class VncUseAgent:
         # Build graph
         self.graph = self._build_graph()
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> Any:
         """Build LangGraph state machine.
 
         Returns:
-            Compiled graph
+            Compiled graph (CompiledStateGraph)
         """
         builder = StateGraph(CUAState)
 
@@ -191,7 +193,7 @@ class VncUseAgent:
                 }
 
             # Check for blocking safety decision
-            if should_block(safety_decision):
+            if safety_decision and should_block(safety_decision):
                 reason = safety_decision.get("reason", "Unknown")
                 logger.warning(f"Action blocked by safety: {reason}")
                 return {
@@ -267,10 +269,12 @@ class VncUseAgent:
             # Create step log
             from .types import StepLog
 
+            observation_text = cast("str", state.get("observation", "") or "")
+            proposed = cast("list[dict[str, Any]]", state.get("proposed_actions", []) or [])
             step_log: StepLog = {
                 "step_number": step_number,
-                "observation": state.get("observation", ""),
-                "proposed_actions": state.get("proposed_actions", []),
+                "observation": observation_text,
+                "proposed_actions": proposed,
                 "executed_action": {"name": function_name, "args": args},
                 "result": result_text,
                 "screenshot_path": screenshot_path,
@@ -291,7 +295,7 @@ class VncUseAgent:
             # Still try to get screenshot for error reporting
             try:
                 screenshot = self.vnc.screenshot_png()
-            except:
+            except Exception:
                 screenshot = b""
 
             action_text += f" - Exception: {e!s}"
@@ -307,19 +311,19 @@ class VncUseAgent:
                 screenshot_path = str(path.name)
 
             # Create step log for error
-            from .types import StepLog
-
-            step_log: StepLog = {
+            err_observation = cast("str", state.get("observation", "") or "")
+            err_proposed = cast("list[dict[str, Any]]", state.get("proposed_actions", []) or [])
+            error_step_log: StepLog = {
                 "step_number": step_number,
-                "observation": state.get("observation", ""),
-                "proposed_actions": state.get("proposed_actions", []),
+                "observation": err_observation,
+                "proposed_actions": err_proposed,
                 "executed_action": {"name": function_name, "args": args},
                 "result": result_text,
                 "screenshot_path": screenshot_path,
                 "timestamp": time.time(),
             }
 
-            updated_step_logs = state.get("step_logs", []) + [step_log]
+            updated_step_logs = state.get("step_logs", []) + [error_step_log]
 
             return {
                 "pending_calls": remaining,
@@ -343,15 +347,16 @@ class VncUseAgent:
         safety = state["safety"]
         pending = state["pending_calls"]
 
-        # Log the confirmation request
-        self.hitl_gate.request_confirmation(safety, pending)
+        # Log the confirmation request (safety might be None)
+        if safety is not None:
+            self.hitl_gate.request_confirmation(safety, pending)
 
         # Use callback if provided, otherwise use LangGraph interrupt
         if self.hitl_callback:
             logger.debug("Using HITL callback for user decision")
             try:
                 # Call async callback from sync context
-                approved = asyncio.run(self.hitl_callback(safety, pending))
+                approved: bool = asyncio.run(self.hitl_callback(safety or {}, pending))
 
                 if not approved:
                     logger.warning("User denied action via callback")

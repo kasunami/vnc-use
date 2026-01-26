@@ -55,7 +55,7 @@ def test_config_building():
     assert "drag_and_drop" in config.tools[0].computer_use.excluded_predefined_functions, (
         "Should exclude specified actions"
     )
-    assert config.thinking_config.include_thoughts == False, "Should not include thoughts"
+    assert not config.thinking_config.include_thoughts, "Should not include thoughts"
 
     print("  ✓ Config built successfully")
     print("  ✓ Computer Use tool configured")

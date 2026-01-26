@@ -1,6 +1,7 @@
 """Tests for MCP server functionality."""
 
 import pytest
+
 from vnc_use.mcp_server import mcp
 
 

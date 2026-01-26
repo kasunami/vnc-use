@@ -10,6 +10,7 @@ as tool parameters to avoid exposing them to LLMs.
 
 import base64
 import logging
+import os
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -17,7 +18,7 @@ from fastmcp import Context, FastMCP
 from .agent import VncUseAgent
 from .credential_store import get_default_store
 from .planners.gemini import compress_screenshot
-
+from .types import CUAState
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ def _wrap_agent_for_streaming(
         except Exception as e:
             logger.warning(f"Failed to stream screenshot: {e}")
 
-    def streaming_propose_node(state: dict) -> dict:
+    def streaming_propose_node(state: CUAState) -> dict[str, Any]:
         """Wrapped propose node with streaming."""
         step = state["step"]
 
@@ -282,7 +283,7 @@ def _wrap_agent_for_streaming(
 
         return result
 
-    def streaming_act_node(state: dict) -> dict:
+    def streaming_act_node(state: CUAState) -> dict[str, Any]:
         """Wrapped act node with streaming."""
         step = state["step"]
 
@@ -321,8 +322,8 @@ def _wrap_agent_for_streaming(
 
         return result
 
-    # Replace node methods
-    agent._propose_node = streaming_propose_node
-    agent._act_node = streaming_act_node
+    # Replace node methods (monkey-patching for streaming support)
+    object.__setattr__(agent, "_propose_node", streaming_propose_node)
+    object.__setattr__(agent, "_act_node", streaming_act_node)
 
     return agent

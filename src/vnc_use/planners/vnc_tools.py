@@ -103,9 +103,8 @@ class Wait5SecondsTool(BaseModel):
     """
 
 
-
 # Tool name to Pydantic model mapping
-VNC_TOOL_SCHEMAS = {
+VNC_TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
     "click_at": ClickAtTool,
     "double_click_at": DoubleClickAtTool,
     "hover_at": HoverAtTool,

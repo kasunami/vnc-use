@@ -5,7 +5,6 @@ from .backends.vnc import VNCController
 from .planners.gemini import GeminiComputerUse
 from .types import ActionResult, CUAState
 
-
 __version__ = "0.1.0"
 
 __all__ = [

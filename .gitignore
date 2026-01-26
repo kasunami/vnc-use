@@ -18,3 +18,13 @@ runs/
 
 # CLAUDE.md should not be committed
 CLAUDE.md
+
+# QA artifacts
+junit.xml
+coverage.xml
+.coverage
+htmlcov/
+ruff-results.sarif
+mypy-results.sarif
+mypy-output.json
+bandit-results.json

@@ -18,7 +18,6 @@ from google.genai.types import (
 
 from .base import BasePlanner
 
-
 logger = logging.getLogger(__name__)
 
 # Model ID for Gemini Computer Use
@@ -39,7 +38,7 @@ def compress_screenshot(png_bytes: bytes, max_width: int = 512) -> bytes:
 
     from PIL import Image
 
-    img = Image.open(io.BytesIO(png_bytes))
+    img: Image.Image = Image.open(io.BytesIO(png_bytes))
 
     # Resize if too large
     if img.width > max_width:
@@ -95,7 +94,7 @@ class GeminiPlanner(BasePlanner):
             Configuration for Gemini API request
         """
         computer_use = ComputerUse(
-            environment="ENVIRONMENT_BROWSER",
+            environment="ENVIRONMENT_BROWSER",  # type: ignore[arg-type]
             excluded_predefined_functions=self.excluded_actions,
         )
 
@@ -132,7 +131,7 @@ class GeminiPlanner(BasePlanner):
             png_b64 = base64.b64encode(compressed).decode("utf-8")
             parts.append(
                 Part(
-                    inline_data={
+                    inline_data={  # type: ignore[arg-type]
                         "mime_type": "image/png",
                         "data": png_b64,
                     }
@@ -174,11 +173,12 @@ class GeminiPlanner(BasePlanner):
                         if hasattr(part, "function_response") and part.function_response:
                             # Keep function response but remove screenshot
                             fr = part.function_response
-                            cleaned_response = {
-                                "url": fr.response.get("url", ""),
+                            fr_resp = fr.response or {}
+                            cleaned_response: dict[str, Any] = {
+                                "url": fr_resp.get("url", ""),
                             }
-                            if "error" in fr.response:
-                                cleaned_response["error"] = fr.response["error"]
+                            if "error" in fr_resp:
+                                cleaned_response["error"] = fr_resp["error"]
 
                             from google.genai.types import FunctionResponse, Part
 
@@ -205,7 +205,7 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=cleaned_contents,
+            contents=cleaned_contents,  # type: ignore[arg-type]
             config=config,
         )
 
@@ -416,7 +416,7 @@ class GeminiPlanner(BasePlanner):
         parts = [
             Part(text=context_text),
             Part(
-                inline_data={
+                inline_data={  # type: ignore[arg-type]
                     "mime_type": "image/png",
                     "data": png_b64,
                 }
@@ -430,7 +430,7 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=contents,
+            contents=contents,  # type: ignore[arg-type]
             config=config,
         )
 
