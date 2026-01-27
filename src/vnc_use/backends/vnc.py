@@ -445,7 +445,123 @@ class VNCController:
 
         logger.debug(f"Scrolled {direction} with magnitude {magnitude} ({repeats} repeats)")
 
-    def execute_action(  # noqa: PLR0912, PLR0915
+    def _action_click_at(self, args: dict, width: int, height: int) -> None:
+        """Handle click_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.click(px, py)
+
+    def _action_double_click_at(self, args: dict, width: int, height: int) -> None:
+        """Handle double_click_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.double_click(px, py)
+
+    def _action_right_click_at(self, args: dict, width: int, height: int) -> None:
+        """Handle right_click_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.click(px, py, button=3)
+
+    def _action_triple_click_at(self, args: dict, width: int, height: int) -> None:
+        """Handle triple_click_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.triple_click(px, py)
+
+    def _action_middle_click_at(self, args: dict, width: int, height: int) -> None:
+        """Handle middle_click_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.middle_click(px, py)
+
+    def _action_left_mouse_down(self, args: dict, width: int, height: int) -> None:
+        """Handle left_mouse_down action."""
+        self.mouse_down(button=1)
+
+    def _action_left_mouse_up(self, args: dict, width: int, height: int) -> None:
+        """Handle left_mouse_up action."""
+        self.mouse_up(button=1)
+
+    def _action_hover_at(self, args: dict, width: int, height: int) -> None:
+        """Handle hover_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.move(px, py)
+
+    def _action_type_text_at(self, args: dict, width: int, height: int) -> None:
+        """Handle type_text_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.click(px, py)  # Focus first
+        self.type_text(
+            args["text"],
+            press_enter=args.get("press_enter", False),
+            clear_first=args.get("clear_before_typing", False),
+        )
+
+    def _action_type_text(self, args: dict, width: int, height: int) -> None:
+        """Handle type_text action."""
+        self.type_text(
+            args["text"],
+            press_enter=args.get("press_enter", False),
+            clear_first=args.get("clear_before_typing", False),
+        )
+
+    def _action_key_combination(self, args: dict, width: int, height: int) -> None:
+        """Handle key_combination action."""
+        self.key_combo(args["keys"])
+
+    def _action_hold_key(self, args: dict, width: int, height: int) -> None:
+        """Handle hold_key action."""
+        self.hold_key(args["key"], args["duration"])
+
+    def _action_scroll_document(self, args: dict, width: int, height: int) -> None:
+        """Handle scroll_document action."""
+        self.scroll(args["direction"], args.get("magnitude", 800))
+
+    def _action_scroll_at(self, args: dict, width: int, height: int) -> None:
+        """Handle scroll_at action."""
+        px = denorm_x(args["x"], width, width)
+        py = denorm_y(args["y"], height, height)
+        self.move(px, py)
+        self.scroll(args["direction"], args.get("magnitude", 800))
+
+    def _action_drag_and_drop(self, args: dict, width: int, height: int) -> None:
+        """Handle drag_and_drop action."""
+        x0 = denorm_x(args["start_x"], width, width)
+        y0 = denorm_y(args["start_y"], height, height)
+        x1 = denorm_x(args["end_x"], width, width)
+        y1 = denorm_y(args["end_y"], height, height)
+        self.drag_and_drop(x0, y0, x1, y1)
+
+    def _action_wait_5_seconds(self, args: dict, width: int, height: int) -> None:
+        """Handle wait_5_seconds action."""
+        logger.info("Waiting 5 seconds...")
+        time.sleep(5)
+
+    def _get_action_handlers(self) -> dict:
+        """Get mapping of action names to handler methods."""
+        return {
+            "click_at": self._action_click_at,
+            "double_click_at": self._action_double_click_at,
+            "right_click_at": self._action_right_click_at,
+            "triple_click_at": self._action_triple_click_at,
+            "middle_click_at": self._action_middle_click_at,
+            "left_mouse_down": self._action_left_mouse_down,
+            "left_mouse_up": self._action_left_mouse_up,
+            "hover_at": self._action_hover_at,
+            "type_text_at": self._action_type_text_at,
+            "type_text": self._action_type_text,
+            "key_combination": self._action_key_combination,
+            "hold_key": self._action_hold_key,
+            "scroll_document": self._action_scroll_document,
+            "scroll_at": self._action_scroll_at,
+            "drag_and_drop": self._action_drag_and_drop,
+            "wait_5_seconds": self._action_wait_5_seconds,
+        }
+
+    def execute_action(
         self,
         action_name: str,
         args: dict,
@@ -462,46 +578,9 @@ class VNCController:
         try:
             width, height = self.get_screen_size()
 
-            if action_name == "click_at":
-                # Use screen dimensions for denormalization (Anthropic API returns pixel coords)
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                # Use single click (tint2 taskbar needs single click, not double)
-                self.click(px, py)
-
-            elif action_name == "double_click_at":
-                # Fallback for compatibility if model somehow calls this
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.double_click(px, py)
-
-            elif action_name == "right_click_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.click(px, py, button=3)  # button=3 for right-click
-
-            elif action_name == "triple_click_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.triple_click(px, py)
-
-            elif action_name == "middle_click_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.middle_click(px, py)
-
-            elif action_name == "left_mouse_down":
-                # Press and hold left mouse button at current position
-                self.mouse_down(button=1)
-
-            elif action_name == "left_mouse_up":
-                # Release left mouse button
-                self.mouse_up(button=1)
-
-            elif action_name == "cursor_position":
-                # Get current cursor position and return in output field
+            # Special case: cursor_position returns early with output
+            if action_name == "cursor_position":
                 cursor_x, cursor_y = self.get_cursor_position()
-                # Scale back to API coordinates for consistency
                 api_x = denorm_x(cursor_x, width, width)
                 api_y = denorm_y(cursor_y, height, height)
                 screenshot = self.screenshot_png()
@@ -513,60 +592,14 @@ class VNCController:
                     output=f"X={api_x},Y={api_y}",
                 )
 
-            elif action_name == "hover_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.move(px, py)
+            # Dispatch to appropriate handler
+            handlers = self._get_action_handlers()
+            handler = handlers.get(action_name)
 
-            elif action_name == "type_text_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.click(px, py)  # Focus first
-                self.type_text(
-                    args["text"],
-                    press_enter=args.get("press_enter", False),
-                    clear_first=args.get("clear_before_typing", False),
-                )
-
-            elif action_name == "type_text":
-                # Type at current cursor position (from Anthropic's native API)
-                self.type_text(
-                    args["text"],
-                    press_enter=args.get("press_enter", False),
-                    clear_first=args.get("clear_before_typing", False),
-                )
-
-            elif action_name == "key_combination":
-                # Native API provides "keys" parameter
-                self.key_combo(args["keys"])
-
-            elif action_name == "hold_key":
-                # Native API provides "key" and "duration" parameters
-                self.hold_key(args["key"], args["duration"])
-
-            elif action_name == "scroll_document":
-                self.scroll(args["direction"], args.get("magnitude", 800))
-
-            elif action_name == "scroll_at":
-                px = denorm_x(args["x"], width, width)
-                py = denorm_y(args["y"], height, height)
-                self.move(px, py)  # Move to location first
-                self.scroll(args["direction"], args.get("magnitude", 800))
-
-            elif action_name == "drag_and_drop":
-                # Native API provides start_x, start_y, end_x, end_y
-                x0 = denorm_x(args["start_x"], width, width)
-                y0 = denorm_y(args["start_y"], height, height)
-                x1 = denorm_x(args["end_x"], width, width)
-                y1 = denorm_y(args["end_y"], height, height)
-                self.drag_and_drop(x0, y0, x1, y1)
-
-            elif action_name == "wait_5_seconds":
-                logger.info("Waiting 5 seconds...")
-                time.sleep(5)
-
-            else:
+            if handler is None:
                 raise ValueError(f"Unknown action: {action_name}")
+
+            handler(args, width, height)
 
             # Capture screenshot after action
             screenshot = self.screenshot_png()

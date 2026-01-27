@@ -50,7 +50,7 @@ class NativeComputerPlanner(BasePlanner):
             display_height: Native VNC display height in pixels
         """
         self.excluded_actions = excluded_actions or []
-        self.model = model or os.getenv("COMPUTER_USE_MODEL", DEFAULT_MODEL)
+        self.model: str = model or os.getenv("COMPUTER_USE_MODEL", DEFAULT_MODEL)
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
 
         if not self.api_key:

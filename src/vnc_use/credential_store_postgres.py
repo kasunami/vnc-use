@@ -50,6 +50,8 @@ class PostgreSQLCredentialStore(CredentialStore):
         """
         if not password:
             return ""
+        if not self.encryption_key:
+            raise ValueError("Encryption key not configured")
         key_bytes = self.encryption_key.encode()
         pwd_bytes = password.encode()
         encrypted = bytes(
@@ -60,6 +62,9 @@ class PostgreSQLCredentialStore(CredentialStore):
     def _decrypt_password(self, encrypted: str) -> str:
         """Decrypt password."""
         if not encrypted or encrypted == "PLACEHOLDER":
+            return ""
+        if not self.encryption_key:
+            logger.error("Encryption key not configured for decryption")
             return ""
         try:
             key_bytes = self.encryption_key.encode()
