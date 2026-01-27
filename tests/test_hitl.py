@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Test HITL callback integration."""
 
+import pytest
+
 from vnc_use.agent import VncUseAgent
 
 
+@pytest.mark.external
 def test_hitl_callback():
     """Test that HITL callback is invoked when safety decision requires confirmation."""
     print("Testing HITL callback integration...")
@@ -58,6 +61,7 @@ def test_hitl_callback():
     print("  ✓ Approval flows through correctly")
 
 
+@pytest.mark.external
 def test_hitl_denial():
     """Test that denial works correctly."""
     print("\n\nTesting HITL denial...")

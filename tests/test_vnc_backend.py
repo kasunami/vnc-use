@@ -16,6 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import pytest
+
 from src.vnc_use.backends.vnc import VNCController, denorm_x, denorm_y
 
 
@@ -51,8 +53,9 @@ def test_denormalization():
     print("  ✓ All denormalization tests passed")
 
 
+@pytest.mark.skip(reason="Manual test - requires VNC server parameter")
 def test_vnc_connection(vnc_server: str, password: str | None = None):
-    """Test VNC connection and basic operations."""
+    """Test VNC connection and basic operations (manual test)."""
     print(f"\n=== Testing VNC Connection to {vnc_server} ===")
 
     controller = VNCController()
