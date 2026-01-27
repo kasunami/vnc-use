@@ -31,9 +31,9 @@ def test_execute_vnc_task_tool_registration():
 @pytest.mark.external
 @pytest.mark.asyncio
 async def test_execute_vnc_task_without_vnc():
-    """Test execute_vnc_task error handling when VNC is unavailable.
+    """Test execute_vnc_task error handling when credentials not found.
 
-    Requires: VNC server (or will fail to connect)
+    Tests the credential lookup failure path.
     """
     # Get the underlying function from the tool
     tools = mcp._tool_manager._tools
@@ -44,25 +44,25 @@ async def test_execute_vnc_task_without_vnc():
         pytest.skip("Cannot access underlying function")
 
     result = await tool.fn(
-        vnc_server="nonexistent::9999",
+        hostname="nonexistent-host",
         task="Test task",
-        vnc_password=None,
         step_limit=5,
         timeout=10,
         ctx=None,
     )
 
-    # Should return error result
+    # Should return error result (no credentials found)
     assert result["success"] is False
     assert result["error"] is not None
+    assert "No credentials found" in result["error"]
 
 
 @pytest.mark.external
 @pytest.mark.asyncio
 async def test_execute_vnc_task_parameter_validation():
-    """Test parameter types are correct.
+    """Test that execute_vnc_task returns correct structure.
 
-    Requires: VNC server and GOOGLE_API_KEY
+    Tests the return value structure when no credentials found.
     """
     # Get the underlying function from the tool
     tools = mcp._tool_manager._tools
@@ -73,9 +73,8 @@ async def test_execute_vnc_task_parameter_validation():
         pytest.skip("Cannot access underlying function")
 
     result = await tool.fn(
-        vnc_server="localhost::5901",
+        hostname="test-host",
         task="Open browser",
-        vnc_password="test",
         step_limit=10,
         timeout=60,
         ctx=None,

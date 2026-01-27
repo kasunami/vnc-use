@@ -102,17 +102,25 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
     "S101",   # assert in tests is expected
+    "S105",   # hardcoded passwords in test fixtures are intentional
     "S106",   # hardcoded test passwords are intentional
+    "S108",   # /tmp paths in tests are intentional
     "S311",   # pseudo-random generator ok in tests
     "S603",   # subprocess calls are intentional in test setup
     "S607",   # partial executable paths (docker-compose) are intentional
+    "SIM117", # nested with statements are clearer in tests
+    "TC001",  # type imports don't need TYPE_CHECKING in tests
 ]
 "**/test_*.py" = [
     "S101",   # assert in tests is expected
+    "S105",   # hardcoded passwords in test fixtures are intentional
     "S106",   # hardcoded test passwords are intentional
+    "S108",   # /tmp paths in tests are intentional
     "S311",   # pseudo-random generator ok in tests
     "S603",   # subprocess calls are intentional in test setup
     "S607",   # partial executable paths (docker-compose) are intentional
+    "SIM117", # nested with statements are clearer in tests
+    "TC001",  # type imports don't need TYPE_CHECKING in tests
 ]
 # CLI scripts use subprocess and argparse by design
 "**/cli.py" = [
