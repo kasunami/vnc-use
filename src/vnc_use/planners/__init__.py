@@ -3,5 +3,12 @@
 from .anthropic import AnthropicPlanner
 from .base import BasePlanner
 from .gemini import GeminiComputerUse, GeminiPlanner
+from .native_computer import NativeComputerPlanner
 
-__all__ = ["AnthropicPlanner", "BasePlanner", "GeminiComputerUse", "GeminiPlanner"]
+__all__ = [
+    "AnthropicPlanner",
+    "BasePlanner",
+    "GeminiComputerUse",
+    "GeminiPlanner",
+    "NativeComputerPlanner",
+]

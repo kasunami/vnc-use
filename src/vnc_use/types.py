@@ -30,6 +30,7 @@ class CUAState(TypedDict):
     step_logs: list[StepLog]  # Structured logs for report generation
     pending_calls: list[dict[str, Any]]  # buffered function calls from last response
     last_screenshot_png: bytes | None
+    last_observation: str  # LLM's observation from previous step for action history context
     step: int
     done: bool
     safety: dict[str, Any] | None  # last safety_decision (if any)
@@ -44,6 +45,7 @@ class ActionResult(BaseModel):
     error: str | None = None
     screenshot_png: bytes
     url: str = ""  # empty for VNC desktop; populated if browser URL available
+    output: str | None = None  # command output (e.g., cursor position)
 
 
 class VNCAction(BaseModel):

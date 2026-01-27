@@ -2,6 +2,7 @@
 
 import io
 import logging
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -14,31 +15,69 @@ from ..types import ActionResult
 
 logger = logging.getLogger(__name__)
 
+# Map Anthropic's Computer Use API key names to vncdotool key names
+# Anthropic uses capitalized names, vncdotool uses lowercase
+ANTHROPIC_TO_VNCDOTOOL_KEYS = {
+    "Return": "return",
+    "Enter": "enter",
+    "Escape": "esc",
+    "Backspace": "bsp",
+    "Tab": "tab",
+    "Delete": "delete",
+    "Insert": "ins",
+    "Home": "home",
+    "End": "end",
+    "PageUp": "pgup",
+    "PageDown": "pgdn",
+    "ArrowLeft": "left",
+    "ArrowUp": "up",
+    "ArrowRight": "right",
+    "ArrowDown": "down",
+    "Space": "space",
+    # Function keys
+    "F1": "f1",
+    "F2": "f2",
+    "F3": "f3",
+    "F4": "f4",
+    "F5": "f5",
+    "F6": "f6",
+    "F7": "f7",
+    "F8": "f8",
+    "F9": "f9",
+    "F10": "f10",
+    "F11": "f11",
+    "F12": "f12",
+}
 
-def denorm_x(x: int, width: int) -> int:
-    """Convert normalized x coordinate (0-999) to pixel x.
+
+def denorm_x(x: int, width: int, max_coord: int = 1000) -> int:
+    """Convert normalized x coordinate to pixel x.
 
     Args:
-        x: Normalized x coordinate (0-999)
+        x: Normalized x coordinate
         width: Screen width in pixels
+        max_coord: Maximum coordinate value the model outputs (default 1000 for 0-999 range)
+                   Set to actual screenshot width for models that output pixel coordinates
 
     Returns:
         Pixel x coordinate
     """
-    return round(x * width / 1000)
+    return round(x * width / max_coord)
 
 
-def denorm_y(y: int, height: int) -> int:
-    """Convert normalized y coordinate (0-999) to pixel y.
+def denorm_y(y: int, height: int, max_coord: int = 1000) -> int:
+    """Convert normalized y coordinate to pixel y.
 
     Args:
-        y: Normalized y coordinate (0-999)
+        y: Normalized y coordinate
         height: Screen height in pixels
+        max_coord: Maximum coordinate value the model outputs (default 1000 for 0-999 range)
+                   Set to actual screenshot height for models that output pixel coordinates
 
     Returns:
         Pixel y coordinate
     """
-    return round(y * height / 1000)
+    return round(y * height / max_coord)
 
 
 class VNCController:
@@ -49,10 +88,26 @@ class VNCController:
     pixels based on current screen size.
     """
 
-    def __init__(self) -> None:
-        """Initialize VNC controller (not yet connected)."""
+    def __init__(self, coord_max: int | None = None, vnc_host: str = "vnc-desktop") -> None:
+        """Initialize VNC controller (not yet connected).
+
+        Args:
+            coord_max: Maximum coordinate value for denormalization
+                       - 1000: For 0-999 normalized coords (Gemini)
+                       - 512: For compressed screenshot width (Claude with 512px screenshots)
+                       - None: Auto-detect from VNC_COORD_MAX env var (default 512)
+        """
         self.client: vnc_api.VNCDoToolClient | None = None
         self._screen_size: tuple[int, int] | None = None
+        self.vnc_host = vnc_host
+
+        # Configure coordinate normalization
+        # Default to 1024 (XGA width) to match Anthropic's Computer Use demo
+        # which scales screenshots to 1024x768 for optimal Claude vision accuracy
+
+        if coord_max is None:
+            coord_max = int(os.getenv("VNC_COORD_MAX", "1024"))
+        self.coord_max = coord_max
 
     def connect(self, server: str, password: str | None = None) -> "VNCController":
         """Connect to VNC server.
@@ -150,9 +205,13 @@ class VNCController:
         if not self.client:
             raise RuntimeError("Not connected to VNC server")
 
-        # Move first to avoid injection glitches
+        # vncdotool clicks work correctly with accurate coordinates
+        # Delays are important for reliable click registration
         self.client.mouseMove(x, y)
-        self.client.mousePress(button)
+        time.sleep(0.1)  # Delay for click registration
+        self.client.mouseDown(button)
+        time.sleep(0.05)
+        self.client.mouseUp(button)
         logger.debug(f"Clicked button {button} at ({x}, {y})")
 
     def double_click(self, x: int, y: int) -> None:
@@ -172,6 +231,89 @@ class VNCController:
         self.client.mousePress(1)
         self.client.mousePress(1)
         logger.debug(f"Double-clicked at ({x}, {y})")
+
+    def triple_click(self, x: int, y: int) -> None:
+        """Triple-click at pixel coordinates.
+
+        Args:
+            x: Pixel x coordinate
+            y: Pixel y coordinate
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        self.client.mouseMove(x, y)
+        self.client.mousePress(1)
+        time.sleep(0.01)  # 10ms delay between clicks (matches Anthropic)
+        self.client.mousePress(1)
+        time.sleep(0.01)
+        self.client.mousePress(1)
+        logger.debug(f"Triple-clicked at ({x}, {y})")
+
+    def middle_click(self, x: int, y: int) -> None:
+        """Middle-click at pixel coordinates.
+
+        Args:
+            x: Pixel x coordinate
+            y: Pixel y coordinate
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        # Use button=2 for middle mouse button
+        self.click(x, y, button=2)
+        logger.debug(f"Middle-clicked at ({x}, {y})")
+
+    def mouse_down(self, button: int = 1) -> None:
+        """Press and hold mouse button at current position.
+
+        Args:
+            button: Mouse button (1=left, 2=middle, 3=right)
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        self.client.mouseDown(button)
+        logger.debug(f"Mouse button {button} down")
+
+    def mouse_up(self, button: int = 1) -> None:
+        """Release mouse button at current position.
+
+        Args:
+            button: Mouse button (1=left, 2=middle, 3=right)
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        self.client.mouseUp(button)
+        logger.debug(f"Mouse button {button} up")
+
+    def get_cursor_position(self) -> tuple[int, int]:
+        """Get current cursor position.
+
+        Returns:
+            Tuple of (x, y) pixel coordinates
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        # vncdotool client maintains position state
+        return (self.client.x, self.client.y)
 
     def drag_and_drop(self, x0: int, y0: int, x1: int, y1: int) -> None:
         """Drag from one point to another.
@@ -225,7 +367,8 @@ class VNCController:
         """Execute keyboard shortcut.
 
         Args:
-            keys: Key combination (e.g., "control+a", "alt+tab")
+            keys: Key combination (e.g., "Return", "ctrl+c", "alt+tab")
+                  Supports Anthropic's Computer Use API key names
 
         Raises:
             RuntimeError: If not connected
@@ -233,10 +376,39 @@ class VNCController:
         if not self.client:
             raise RuntimeError("Not connected to VNC server")
 
-        # vncdotool accepts "ctrl-a" format; normalize input
-        normalized = keys.replace("+", "-").replace("control", "ctrl")
+        # Normalize Anthropic key names to vncdotool key names
+        normalized = keys
+        for anthropic_key, vnc_key in ANTHROPIC_TO_VNCDOTOOL_KEYS.items():
+            normalized = normalized.replace(anthropic_key, vnc_key)
+
+        # vncdotool accepts "ctrl-a" format; normalize separators and modifiers
+        normalized = normalized.replace("+", "-").replace("control", "ctrl")
+
         self.client.keyPress(normalized)
-        logger.debug(f"Pressed key combo: {keys}")
+        logger.debug(f"Pressed key: {keys} -> {normalized}")
+
+    def hold_key(self, key: str, duration: float) -> None:
+        """Hold a key down for a specified duration.
+
+        Args:
+            key: Key to hold (e.g., "shift", "ctrl", "a")
+            duration: Time to hold key in seconds (0-100)
+
+        Raises:
+            RuntimeError: If not connected
+        """
+        if not self.client:
+            raise RuntimeError("Not connected to VNC server")
+
+        # Normalize key name (control -> ctrl)
+        normalized = key.replace("control", "ctrl")
+
+        # Press and hold key
+        self.client.keyDown(normalized)
+        time.sleep(duration)
+        self.client.keyUp(normalized)
+
+        logger.debug(f"Held key '{key}' for {duration} seconds")
 
     def scroll(
         self,
@@ -273,7 +445,7 @@ class VNCController:
 
         logger.debug(f"Scrolled {direction} with magnitude {magnitude} ({repeats} repeats)")
 
-    def execute_action(
+    def execute_action(  # noqa: PLR0912, PLR0915
         self,
         action_name: str,
         args: dict,
@@ -291,25 +463,64 @@ class VNCController:
             width, height = self.get_screen_size()
 
             if action_name == "click_at":
-                px = denorm_x(args["x"], width)
-                py = denorm_y(args["y"], height)
-                # Use double-click for VNC desktop - needed for launching apps/folders
-                self.double_click(px, py)
+                # Use screen dimensions for denormalization (Anthropic API returns pixel coords)
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
+                # Use single click (tint2 taskbar needs single click, not double)
+                self.click(px, py)
 
             elif action_name == "double_click_at":
                 # Fallback for compatibility if model somehow calls this
-                px = denorm_x(args["x"], width)
-                py = denorm_y(args["y"], height)
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
                 self.double_click(px, py)
 
+            elif action_name == "right_click_at":
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
+                self.click(px, py, button=3)  # button=3 for right-click
+
+            elif action_name == "triple_click_at":
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
+                self.triple_click(px, py)
+
+            elif action_name == "middle_click_at":
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
+                self.middle_click(px, py)
+
+            elif action_name == "left_mouse_down":
+                # Press and hold left mouse button at current position
+                self.mouse_down(button=1)
+
+            elif action_name == "left_mouse_up":
+                # Release left mouse button
+                self.mouse_up(button=1)
+
+            elif action_name == "cursor_position":
+                # Get current cursor position and return in output field
+                cursor_x, cursor_y = self.get_cursor_position()
+                # Scale back to API coordinates for consistency
+                api_x = denorm_x(cursor_x, width, width)
+                api_y = denorm_y(cursor_y, height, height)
+                screenshot = self.screenshot_png()
+                return ActionResult(
+                    success=True,
+                    error=None,
+                    screenshot_png=screenshot,
+                    url="",
+                    output=f"X={api_x},Y={api_y}",
+                )
+
             elif action_name == "hover_at":
-                px = denorm_x(args["x"], width)
-                py = denorm_y(args["y"], height)
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
                 self.move(px, py)
 
             elif action_name == "type_text_at":
-                px = denorm_x(args["x"], width)
-                py = denorm_y(args["y"], height)
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
                 self.click(px, py)  # Focus first
                 self.type_text(
                     args["text"],
@@ -317,23 +528,37 @@ class VNCController:
                     clear_first=args.get("clear_before_typing", False),
                 )
 
+            elif action_name == "type_text":
+                # Type at current cursor position (from Anthropic's native API)
+                self.type_text(
+                    args["text"],
+                    press_enter=args.get("press_enter", False),
+                    clear_first=args.get("clear_before_typing", False),
+                )
+
             elif action_name == "key_combination":
+                # Native API provides "keys" parameter
                 self.key_combo(args["keys"])
+
+            elif action_name == "hold_key":
+                # Native API provides "key" and "duration" parameters
+                self.hold_key(args["key"], args["duration"])
 
             elif action_name == "scroll_document":
                 self.scroll(args["direction"], args.get("magnitude", 800))
 
             elif action_name == "scroll_at":
-                px = denorm_x(args["x"], width)
-                py = denorm_y(args["y"], height)
+                px = denorm_x(args["x"], width, width)
+                py = denorm_y(args["y"], height, height)
                 self.move(px, py)  # Move to location first
                 self.scroll(args["direction"], args.get("magnitude", 800))
 
             elif action_name == "drag_and_drop":
-                x0 = denorm_x(args["x"], width)
-                y0 = denorm_y(args["y"], height)
-                x1 = denorm_x(args["destination_x"], width)
-                y1 = denorm_y(args["destination_y"], height)
+                # Native API provides start_x, start_y, end_x, end_y
+                x0 = denorm_x(args["start_x"], width, width)
+                y0 = denorm_y(args["start_y"], height, height)
+                x1 = denorm_x(args["end_x"], width, width)
+                y1 = denorm_y(args["end_y"], height, height)
                 self.drag_and_drop(x0, y0, x1, y1)
 
             elif action_name == "wait_5_seconds":

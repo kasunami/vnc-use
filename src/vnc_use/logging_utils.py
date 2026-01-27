@@ -286,10 +286,8 @@ class RunLogger:
                 f.write(f"**Executed:** `{action['name']}({args})`\n\n")
 
                 # Result
-                if "Success" in result:
-                    f.write(f"**Result:** ✓ {result}\n\n")
-                else:
-                    f.write(f"**Result:** ✗ {result}\n\n")
+                result_icon = "✓" if "Success" in result else "✗"
+                f.write(f"**Result:** {result_icon} {result}\n\n")
 
                 # Screenshot
                 if screenshot_path:
@@ -321,9 +319,9 @@ class RunLogger:
         """
         if obj is None:
             return None
-        if isinstance(obj, (str, int, float, bool)):
+        if isinstance(obj, str | int | float | bool):
             return obj
-        if isinstance(obj, (list, tuple)):
+        if isinstance(obj, list | tuple):
             return [self._serialize(item) for item in obj]
         if isinstance(obj, dict):
             return {k: self._serialize(v) for k, v in obj.items()}

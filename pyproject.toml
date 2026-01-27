@@ -1,7 +1,7 @@
 [project]
 name = "vnc-use"
-version = "0.1.0"
-description = "LangGraph agent for Computer Use via VNC with Gemini 2.5"
+version = "0.2.0"
+description = "LangGraph agent for Computer Use via VNC with multi-model support (Gemini, Anthropic)"
 readme = "README.md"
 authors = [
     { name = "Johann-Peter Hartmann", email = "johann-peter.hartmann@mayflower.de" }
@@ -18,6 +18,7 @@ dependencies = [
     "fastmcp>=2.3",
     "langchain-core>=0.3.0",
     "langchain-anthropic>=0.3.0",
+    "anthropic>=0.40.0",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +33,9 @@ dev = [
 ]
 keyring = [
     "keyring>=24.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
@@ -157,8 +161,10 @@ module = [
     "fastmcp.*",
     "langchain_core.*",
     "langchain_anthropic.*",
+    "anthropic.*",
     "PIL.*",
     "keyring.*",
+    "psycopg2.*",
 ]
 ignore_missing_imports = true
 

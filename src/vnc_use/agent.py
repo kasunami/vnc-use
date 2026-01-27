@@ -56,7 +56,10 @@ class VncUseAgent:
                 Called with (safety_decision, pending_calls) and should return bool.
                 If not provided, uses LangGraph interrupt mechanism.
             api_key: API key for the model provider (GOOGLE_API_KEY or ANTHROPIC_API_KEY env)
-            model_provider: LLM provider to use ("gemini" or "anthropic", defaults to "gemini")
+            model_provider: LLM provider to use:
+                - "gemini": Google Gemini with function calling (default)
+                - "anthropic": Anthropic Claude with function calling
+                - "native": Anthropic's native computer_20250124 tool (recommended for best accuracy)
         """
         self.vnc_server = vnc_server
         self.vnc_password = vnc_password
@@ -77,7 +80,11 @@ class VncUseAgent:
             ]
 
         # Initialize components
-        self.vnc = VNCController()
+        # For native Anthropic API, pass screen dimensions for coordinate scaling
+        if model_provider.lower() == "native":
+            self.vnc = VNCController(coord_max=screen_size[0])
+        else:
+            self.vnc = VNCController()
 
         # Initialize planner based on provider
         if model_provider.lower() == "gemini":
@@ -94,10 +101,19 @@ class VncUseAgent:
                 excluded_actions=excluded_actions,
                 api_key=api_key,
             )
+        elif model_provider.lower() == "native":
+            from .planners import NativeComputerPlanner
+
+            self.planner = NativeComputerPlanner(
+                excluded_actions=excluded_actions,
+                api_key=api_key,
+                display_width=screen_size[0],
+                display_height=screen_size[1],
+            )
         else:
             raise ValueError(
                 f"Unknown model_provider: {model_provider}. "
-                "Supported providers: 'gemini', 'anthropic'"
+                "Supported providers: 'gemini', 'anthropic', 'native'"
             )
 
         self.hitl_gate = HITLGate()
