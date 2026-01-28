@@ -628,3 +628,340 @@ class TestVNCControllerExecuteAction:
         assert result.success is True
         # Double click should press twice
         assert mock_client.mousePress.call_count == 2
+
+    def test_execute_action_right_click_at(self):
+        """Should execute right_click_at action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("right_click_at", {"x": 300, "y": 300})
+
+        assert result.success is True
+        # Right click uses button=3
+        mock_client.mouseDown.assert_called_with(3)
+        mock_client.mouseUp.assert_called_with(3)
+
+    def test_execute_action_triple_click_at(self):
+        """Should execute triple_click_at action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("triple_click_at", {"x": 400, "y": 400})
+
+        assert result.success is True
+        # Triple click should press three times
+        assert mock_client.mousePress.call_count == 3
+
+    def test_execute_action_middle_click_at(self):
+        """Should execute middle_click_at action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("middle_click_at", {"x": 500, "y": 500})
+
+        assert result.success is True
+        # Middle click uses button=2
+        mock_client.mouseDown.assert_called_with(2)
+        mock_client.mouseUp.assert_called_with(2)
+
+    def test_execute_action_left_mouse_down(self):
+        """Should execute left_mouse_down action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("left_mouse_down", {})
+
+        assert result.success is True
+        mock_client.mouseDown.assert_called_with(1)
+
+    def test_execute_action_left_mouse_up(self):
+        """Should execute left_mouse_up action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("left_mouse_up", {})
+
+        assert result.success is True
+        mock_client.mouseUp.assert_called_with(1)
+
+    def test_execute_action_type_text(self):
+        """Should execute type_text action (without coordinates)."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("type_text", {"text": "test"})
+
+        assert result.success is True
+        assert mock_client.keyPress.call_count >= 4  # "test" = 4 chars
+
+    def test_execute_action_hold_key(self):
+        """Should execute hold_key action."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("hold_key", {"key": "shift", "duration": 0.1})
+
+        assert result.success is True
+        mock_client.keyDown.assert_called()
+        mock_client.keyUp.assert_called()
+
+    def test_execute_action_cursor_position(self):
+        """Should execute cursor_position action and return coordinates."""
+        mock_client = MagicMock()
+        mock_client.x = 500
+        mock_client.y = 300
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("cursor_position", {})
+
+        assert result.success is True
+        assert result.output is not None
+        assert "X=" in result.output
+        assert "Y=" in result.output
+
+    def test_execute_action_drag_missing_coords(self):
+        """Should fail when drag_and_drop is missing coordinates."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("drag_and_drop", {"x": 100})  # Missing other coords
+
+        assert result.success is False
+        assert "requires start coordinates" in result.error
+
+    def test_execute_action_screenshot_fails_in_error_handler(self):
+        """Should handle screenshot failure in error handler gracefully."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+
+        # Make screenshot fail both during action and in error handler
+        mock_client.captureScreen.side_effect = Exception("Screen capture failed")
+
+        result = controller.execute_action("click_at", {"x": 500, "y": 500})
+
+        # Action fails due to screenshot error, but error is caught
+        assert result.success is False
+        assert result.screenshot_png == b""  # Empty bytes when screenshot fails
+
+
+class TestVNCControllerTripleClick:
+    """Tests for triple_click method."""
+
+    def test_triple_click_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.triple_click(100, 100)
+
+    def test_triple_click_presses_three_times(self):
+        """Should press mouse button three times."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.triple_click(200, 200)
+
+        mock_client.mouseMove.assert_called_once_with(200, 200)
+        assert mock_client.mousePress.call_count == 3
+
+
+class TestVNCControllerMiddleClick:
+    """Tests for middle_click method."""
+
+    def test_middle_click_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.middle_click(100, 100)
+
+    def test_middle_click_uses_button_2(self):
+        """Should use button=2 for middle click."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.middle_click(200, 200)
+
+        mock_client.mouseDown.assert_called_with(2)
+        mock_client.mouseUp.assert_called_with(2)
+
+
+class TestVNCControllerMouseDownUp:
+    """Tests for mouse_down and mouse_up methods."""
+
+    def test_mouse_down_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.mouse_down()
+
+    def test_mouse_up_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.mouse_up()
+
+    def test_mouse_down_calls_client(self):
+        """Should call client mouseDown."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.mouse_down(button=3)
+
+        mock_client.mouseDown.assert_called_once_with(3)
+
+    def test_mouse_up_calls_client(self):
+        """Should call client mouseUp."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.mouse_up(button=2)
+
+        mock_client.mouseUp.assert_called_once_with(2)
+
+
+class TestVNCControllerGetCursorPosition:
+    """Tests for get_cursor_position method."""
+
+    def test_get_cursor_position_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.get_cursor_position()
+
+    def test_get_cursor_position_returns_coordinates(self):
+        """Should return current cursor position."""
+        mock_client = MagicMock()
+        mock_client.x = 123
+        mock_client.y = 456
+
+        controller = VNCController()
+        controller.client = mock_client
+
+        result = controller.get_cursor_position()
+
+        assert result == (123, 456)
+
+
+class TestVNCControllerHoldKey:
+    """Tests for hold_key method."""
+
+    def test_hold_key_raises_when_not_connected(self):
+        """Should raise when not connected."""
+        controller = VNCController()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            controller.hold_key("shift", 1.0)
+
+    def test_hold_key_presses_and_releases(self):
+        """Should press key down, wait, then release."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.hold_key("ctrl", 0.01)  # Short duration for test
+
+        mock_client.keyDown.assert_called_once_with("ctrl")
+        mock_client.keyUp.assert_called_once_with("ctrl")
+
+    def test_hold_key_normalizes_control(self):
+        """Should normalize 'control' to 'ctrl'."""
+        mock_client = MagicMock()
+        controller = VNCController()
+        controller.client = mock_client
+
+        controller.hold_key("control", 0.01)
+
+        mock_client.keyDown.assert_called_once_with("ctrl")
+        mock_client.keyUp.assert_called_once_with("ctrl")
