@@ -18,7 +18,7 @@ def compress_screenshot(png_bytes: bytes, max_width: int = 512) -> bytes:
     Returns:
         Compressed PNG bytes
     """
-    img = Image.open(io.BytesIO(png_bytes))
+    img: Image.Image = Image.open(io.BytesIO(png_bytes))
 
     # Resize if too large
     if img.width > max_width:

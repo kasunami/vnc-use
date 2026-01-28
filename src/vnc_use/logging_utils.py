@@ -3,11 +3,15 @@
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Constants for report formatting
+SECTION_SEPARATOR = "---\n\n"
+REDACTED_VALUE = "***REDACTED***"
 
 
 class RunLogger:
@@ -41,7 +45,7 @@ class RunLogger:
         self.metadata: dict[str, Any] = {
             "run_id": self.run_id,
             "task": task,
-            "start_time": datetime.utcnow().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
             "steps": [],
         }
 
@@ -51,7 +55,7 @@ class RunLogger:
         Returns:
             Run ID with timestamp and UUID
         """
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         short_uuid = str(uuid.uuid4())[:8]
         return f"{timestamp}_{short_uuid}"
 
@@ -147,7 +151,7 @@ class RunLogger:
             "function": function_name,
             "args": args,
             "result": result,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         self.metadata["steps"].append(call_data)
@@ -163,7 +167,7 @@ class RunLogger:
         error_data = {
             "step": step,
             "error": error,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         if "errors" not in self.metadata:
@@ -181,7 +185,7 @@ class RunLogger:
         Returns:
             Path to metadata file
         """
-        self.metadata["end_time"] = datetime.utcnow().isoformat()
+        self.metadata["end_time"] = datetime.now(timezone.utc).isoformat()
         self.metadata["done"] = done
         self.metadata["final_state"] = {
             "step": final_state.get("step", 0),
@@ -213,6 +217,82 @@ class RunLogger:
 
         return metadata_path
 
+    def _format_action_args(self, action: dict[str, Any]) -> str:
+        """Format action arguments as a string."""
+        args = action.get("args", {})
+        return ", ".join(f"{k}={v}" for k, v in args.items())
+
+    def _calculate_step_duration(
+        self, step_log: dict[str, Any], step_logs: list[dict[str, Any]], start_time: float
+    ) -> float:
+        """Calculate duration of a step."""
+        step_num = step_log["step_number"]
+        if step_num > 0 and step_num - 1 < len(step_logs):
+            prev_time = step_logs[step_num - 1]["timestamp"] if step_num > 0 else start_time
+            return step_log["timestamp"] - prev_time
+        return 0
+
+    def _write_report_header(self, f: Any, duration: float, final_state: dict[str, Any]) -> None:
+        """Write report header section."""
+        status = "✓ Completed" if final_state.get("done") else "✗ Failed"
+        f.write("# Agent Execution Report\n\n")
+        f.write(f"**Run ID:** `{self.metadata['run_id']}`\n\n")
+        f.write(f"**Task:** {self.metadata['task']}\n\n")
+        f.write(f"**Duration:** {duration:.1f} seconds\n\n")
+        f.write(f"**Status:** {status}\n\n")
+        if final_state.get("error"):
+            f.write(f"**Error:** {final_state['error']}\n\n")
+        f.write(SECTION_SEPARATOR)
+        f.write("## Initial Observation\n\n")
+        f.write("![Initial Screenshot](step_000_initial.png)\n\n")
+        f.write(SECTION_SEPARATOR)
+        f.write("## Execution Timeline\n\n")
+
+    def _write_step_log(self, f: Any, step_log: dict[str, Any], step_duration: float) -> None:
+        """Write a single step log entry."""
+        step_num = step_log["step_number"]
+        f.write(f"### Step {step_num} ({step_duration:.1f}s)\n\n")
+
+        observation = step_log.get("observation", "")
+        if observation:
+            f.write("**Model Observation:**\n")
+            f.write(f"> {observation}\n\n")
+
+        proposed = step_log.get("proposed_actions", [])
+        if proposed and len(proposed) > 1:
+            f.write("**Proposed Actions:**\n")
+            for i, prop_action in enumerate(proposed, 1):
+                args_str = self._format_action_args(prop_action)
+                f.write(f"{i}. `{prop_action['name']}({args_str})`\n")
+            f.write("\n")
+
+        action = step_log["executed_action"]
+        args_str = self._format_action_args(action)
+        f.write(f"**Executed:** `{action['name']}({args_str})`\n\n")
+
+        result = step_log["result"]
+        result_icon = "✓" if "Success" in result else "✗"
+        f.write(f"**Result:** {result_icon} {result}\n\n")
+
+        screenshot_path = step_log.get("screenshot_path")
+        if screenshot_path:
+            f.write(f"![After Step {step_num}]({screenshot_path})\n\n")
+
+        f.write(SECTION_SEPARATOR)
+
+    def _write_report_summary(
+        self, f: Any, step_logs: list[dict[str, Any]], final_state: dict[str, Any]
+    ) -> None:
+        """Write report summary section."""
+        is_success = final_state.get("done") and not final_state.get("error")
+        f.write("## Summary\n\n")
+        f.write(f"- **Total Steps:** {len(step_logs)}\n")
+        f.write(f"- **Success:** {'Yes' if is_success else 'No'}\n")
+        if final_state.get("error"):
+            f.write(f"- **Final Error:** {final_state['error']}\n")
+        f.write(f"- **Screenshots Saved:** {len(step_logs) + 1}\n")
+        f.write(f"- **Run Directory:** `{self.run_dir.name}`\n")
+
     def _generate_markdown_report(self, final_state: dict[str, Any]) -> Path:
         """Generate markdown execution report.
 
@@ -225,86 +305,20 @@ class RunLogger:
         report_path = self.run_dir / "EXECUTION_REPORT.md"
         step_logs = final_state.get("step_logs", [])
 
-        # Calculate duration
         start = datetime.fromisoformat(self.metadata["start_time"])
         end = datetime.fromisoformat(self.metadata["end_time"])
         duration = (end - start).total_seconds()
 
         with open(report_path, "w") as f:
-            # Header
-            f.write("# Agent Execution Report\n\n")
-            f.write(f"**Run ID:** `{self.metadata['run_id']}`\n\n")
-            f.write(f"**Task:** {self.metadata['task']}\n\n")
-            f.write(f"**Duration:** {duration:.1f} seconds\n\n")
-            f.write(f"**Status:** {'✓ Completed' if final_state.get('done') else '✗ Failed'}\n\n")
-            if final_state.get("error"):
-                f.write(f"**Error:** {final_state['error']}\n\n")
-            f.write("---\n\n")
-
-            # Initial observation
-            f.write("## Initial Observation\n\n")
-            f.write("![Initial Screenshot](step_000_initial.png)\n\n")
-            f.write("---\n\n")
-
-            # Execution timeline
-            f.write("## Execution Timeline\n\n")
+            self._write_report_header(f, duration, final_state)
 
             for step_log in step_logs:
-                step_num = step_log["step_number"]
-                observation = step_log.get("observation", "")
-                action = step_log["executed_action"]
-                result = step_log["result"]
-                screenshot_path = step_log.get("screenshot_path")
+                step_duration = self._calculate_step_duration(
+                    step_log, step_logs, start.timestamp()
+                )
+                self._write_step_log(f, step_log, step_duration)
 
-                # Calculate step duration
-                if step_num > 0 and step_num - 1 < len(step_logs):
-                    prev_time = (
-                        step_logs[step_num - 1]["timestamp"] if step_num > 0 else start.timestamp()
-                    )
-                    step_duration = step_log["timestamp"] - prev_time
-                else:
-                    step_duration = 0
-
-                f.write(f"### Step {step_num} ({step_duration:.1f}s)\n\n")
-
-                # Model observation
-                if observation:
-                    f.write("**Model Observation:**\n")
-                    f.write(f"> {observation}\n\n")
-
-                # Proposed actions
-                proposed = step_log.get("proposed_actions", [])
-                if proposed and len(proposed) > 1:
-                    f.write("**Proposed Actions:**\n")
-                    for i, prop_action in enumerate(proposed, 1):
-                        args = ", ".join(f"{k}={v}" for k, v in prop_action.get("args", {}).items())
-                        f.write(f"{i}. `{prop_action['name']}({args})`\n")
-                    f.write("\n")
-
-                # Executed action
-                args = ", ".join(f"{k}={v}" for k, v in action.get("args", {}).items())
-                f.write(f"**Executed:** `{action['name']}({args})`\n\n")
-
-                # Result
-                result_icon = "✓" if "Success" in result else "✗"
-                f.write(f"**Result:** {result_icon} {result}\n\n")
-
-                # Screenshot
-                if screenshot_path:
-                    f.write(f"![After Step {step_num}]({screenshot_path})\n\n")
-
-                f.write("---\n\n")
-
-            # Summary
-            f.write("## Summary\n\n")
-            f.write(f"- **Total Steps:** {len(step_logs)}\n")
-            f.write(
-                f"- **Success:** {'Yes' if final_state.get('done') and not final_state.get('error') else 'No'}\n"
-            )
-            if final_state.get("error"):
-                f.write(f"- **Final Error:** {final_state['error']}\n")
-            f.write(f"- **Screenshots Saved:** {len(step_logs) + 1}\n")  # +1 for initial
-            f.write(f"- **Run Directory:** `{self.run_dir.name}`\n")
+            self._write_report_summary(f, step_logs, final_state)
 
         return report_path
 
@@ -343,9 +357,9 @@ class RunLogger:
 
         # Redact patterns (basic implementation)
         patterns = [
-            ("api_key", "***REDACTED***"),
-            ("password", "***REDACTED***"),
-            ("secret", "***REDACTED***"),
+            ("api_key", REDACTED_VALUE),
+            ("password", REDACTED_VALUE),
+            ("secret", REDACTED_VALUE),
         ]
 
         for pattern, _replacement in patterns:

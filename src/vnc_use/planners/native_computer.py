@@ -8,10 +8,13 @@ import base64
 import io
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from anthropic import Anthropic
 from PIL import Image
+
+if TYPE_CHECKING:
+    from anthropic.types.beta import BetaContentBlockParam
 
 from .base import BasePlanner
 from .utils import compress_screenshot
@@ -50,7 +53,7 @@ class NativeComputerPlanner(BasePlanner):
             display_height: Native VNC display height in pixels
         """
         self.excluded_actions = excluded_actions or []
-        self.model: str = model or os.getenv("COMPUTER_USE_MODEL", DEFAULT_MODEL)
+        self.model: str = model or os.getenv("COMPUTER_USE_MODEL") or DEFAULT_MODEL
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
 
         if not self.api_key:
@@ -138,10 +141,12 @@ REASONING GUIDELINES:
             )
 
         # Build user message
-        user_content = [
-            {
-                "type": "text",
-                "text": """Here is the current desktop screenshot.
+        user_content: list[BetaContentBlockParam] = cast(
+            "list[BetaContentBlockParam]",
+            [
+                {
+                    "type": "text",
+                    "text": """Here is the current desktop screenshot.
 
 Analyze:
 - Did my last action achieve its intended effect?
@@ -149,16 +154,17 @@ Analyze:
 - Is the task already complete?
 
 What action should I take next?""",
-            },
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": screenshot_b64,
                 },
-            },
-        ]
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": screenshot_b64,
+                    },
+                },
+            ],
+        )
 
         # Construct API call
         try:

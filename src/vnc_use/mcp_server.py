@@ -29,6 +29,88 @@ mcp = FastMCP("VNC Computer Use Agent")
 credential_store = get_default_store()
 
 
+def _build_error_result(error_msg: str) -> dict[str, Any]:
+    """Build a standardized error result."""
+    return {
+        "success": False,
+        "error": error_msg,
+        "run_id": None,
+        "run_dir": None,
+        "steps": 0,
+    }
+
+
+async def _lookup_credentials(
+    hostname: str, ctx: Context | None
+) -> tuple[Any | None, dict[str, Any] | None]:
+    """Look up credentials from store.
+
+    Returns:
+        Tuple of (credentials, error_result) - error_result is set if lookup failed
+    """
+    credentials = credential_store.get(hostname)
+    if credentials:
+        return credentials, None
+
+    error_msg = (
+        f"No credentials found for hostname '{hostname}'. "
+        f"Configure credentials using: vnc-use credentials set {hostname}"
+    )
+    logger.error(error_msg)
+    if ctx:
+        await ctx.info(f"✗ Error: {error_msg}")
+    return None, _build_error_result(error_msg)
+
+
+def _create_hitl_callback(ctx: Context | None) -> Any:
+    """Create HITL callback for user approval via MCP elicitation."""
+    if not ctx:
+        return None
+
+    async def hitl_callback(safety_decision: dict, pending_calls: list) -> bool:
+        """Request user approval via MCP elicitation."""
+        reason = safety_decision.get("reason", "Unknown reason") if safety_decision else "Unknown"
+        actions = ", ".join(call["name"] for call in pending_calls)
+
+        await ctx.info(f"⚠️  Safety confirmation required: {reason}")
+        await ctx.info(f"📋 Proposed actions: {actions}")
+
+        try:
+            result = await ctx.elicit(
+                message=f"Safety confirmation required: {reason}\n"
+                f"Proposed actions: {actions}\n"
+                f"Approve execution?",
+                response_type=None,
+            )
+
+            if result.action == "accept":
+                await ctx.info("✓ User approved action")
+                return True
+            if result.action == "decline":
+                await ctx.info("✗ User declined action")
+                return False
+            await ctx.info("✗ User cancelled operation")
+            return False
+
+        except Exception as e:
+            logger.error(f"Elicitation failed: {e}")
+            await ctx.info(f"✗ Approval request failed: {e}")
+            return False
+
+    return hitl_callback
+
+
+async def _report_completion(ctx: Context, result: dict[str, Any]) -> None:
+    """Report task completion status."""
+    await ctx.info("Task execution completed")
+    if result.get("success"):
+        steps = result.get("final_state", {}).get("step", 0)
+        await ctx.info(f"✓ Task completed successfully in {steps} steps")
+    else:
+        error = result.get("error") or result.get("final_state", {}).get("error", "Unknown error")
+        await ctx.info(f"✗ Task failed: {error}")
+
+
 @mcp.tool()
 async def execute_vnc_task(
     hostname: str,
@@ -71,73 +153,13 @@ async def execute_vnc_task(
 
     try:
         # Look up credentials from store
-        credentials = credential_store.get(hostname)
-        if not credentials:
-            error_msg = (
-                f"No credentials found for hostname '{hostname}'. "
-                f"Configure credentials using: vnc-use credentials set {hostname}"
-            )
-            logger.error(error_msg)
-            if ctx:
-                await ctx.info(f"✗ Error: {error_msg}")
-            return {
-                "success": False,
-                "error": error_msg,
-                "run_id": None,
-                "run_dir": None,
-                "steps": 0,
-            }
+        credentials, error_result = await _lookup_credentials(hostname, ctx)
+        if error_result:
+            return error_result
 
         if ctx:
             await ctx.info(f"Found credentials for {hostname}")
             await ctx.info(f"Connecting to VNC server: {credentials.server}")
-
-        # Create HITL callback for user approval via MCP elicitation
-        async def hitl_callback(safety_decision: dict, pending_calls: list) -> bool:
-            """Request user approval via MCP elicitation.
-
-            Args:
-                safety_decision: Gemini's safety decision
-                pending_calls: List of pending function calls
-
-            Returns:
-                True if user approved, False if denied
-            """
-            if not ctx:
-                # No context for elicitation, auto-approve
-                logger.warning("No MCP context for HITL, auto-approving")
-                return True
-
-            reason = (
-                safety_decision.get("reason", "Unknown reason") if safety_decision else "Unknown"
-            )
-            actions = ", ".join(call["name"] for call in pending_calls)
-
-            await ctx.info(f"⚠️  Safety confirmation required: {reason}")
-            await ctx.info(f"📋 Proposed actions: {actions}")
-
-            try:
-                result = await ctx.elicit(
-                    message=f"Safety confirmation required: {reason}\n"
-                    f"Proposed actions: {actions}\n"
-                    f"Approve execution?",
-                    response_type=None,  # Simple yes/no approval
-                )
-
-                if result.action == "accept":
-                    await ctx.info("✓ User approved action")
-                    return True
-                if result.action == "decline":
-                    await ctx.info("✗ User declined action")
-                    return False
-                # cancel
-                await ctx.info("✗ User cancelled operation")
-                return False
-
-            except Exception as e:
-                logger.error(f"Elicitation failed: {e}")
-                await ctx.info(f"✗ Approval request failed: {e}")
-                return False
 
         # Determine model provider from environment
         model_provider = os.getenv("MODEL_PROVIDER", "gemini")
@@ -149,8 +171,8 @@ async def execute_vnc_task(
             vnc_password=credentials.password,
             step_limit=step_limit,
             seconds_timeout=timeout,
-            hitl_mode=True,  # Enable HITL for risky actions
-            hitl_callback=hitl_callback if ctx else None,  # Use elicitation when context available
+            hitl_mode=True,
+            hitl_callback=_create_hitl_callback(ctx),
             model_provider=model_provider,
         )
 
@@ -163,16 +185,7 @@ async def execute_vnc_task(
 
         # Report completion
         if ctx:
-            await ctx.info("Task execution completed")
-            if result.get("success"):
-                await ctx.info(
-                    f"✓ Task completed successfully in {result['final_state'].get('step', 0)} steps"
-                )
-            else:
-                error = result.get("error") or result.get("final_state", {}).get(
-                    "error", "Unknown error"
-                )
-                await ctx.info(f"✗ Task failed: {error}")
+            await _report_completion(ctx, result)
 
         return {
             "success": result.get("success", False),
@@ -187,13 +200,40 @@ async def execute_vnc_task(
         logger.error(error_msg, exc_info=True)
         if ctx:
             await ctx.info(f"✗ Error: {error_msg}")
-        return {
-            "success": False,
-            "error": error_msg,
-            "run_id": None,
-            "run_dir": None,
-            "steps": 0,
-        }
+        return _build_error_result(error_msg)
+
+
+def _safe_async_run(coro: Any, error_context: str) -> None:
+    """Safely run an async coroutine with error handling."""
+    import asyncio
+
+    try:
+        asyncio.run(coro)
+    except Exception as e:
+        logger.warning(f"{error_context}: {e}")
+
+
+def _truncate_text(text: str, max_len: int = 200) -> str:
+    """Truncate text with ellipsis if too long."""
+    return text[:max_len] + "..." if len(text) > max_len else text
+
+
+def _format_action_summary(proposed: list[dict[str, Any]]) -> str:
+    """Format a summary of proposed actions."""
+    action_names = [a["name"] for a in proposed[:3]]
+    summary = ", ".join(action_names)
+    if len(proposed) > 3:
+        summary += f" (+{len(proposed) - 3} more)"
+    return summary
+
+
+def _format_executed_action(action: dict[str, Any], result_text: str) -> str:
+    """Format an executed action for display."""
+    action_name = action.get("name", "unknown")
+    args = action.get("args", {})
+    args_str = ", ".join(f"{k}={v}" for k, v in args.items())
+    status = "✓" if "Success" in result_text else "✗"
+    return f"{status} Executed: {action_name}({args_str})"
 
 
 def _wrap_agent_for_streaming(
@@ -211,118 +251,76 @@ def _wrap_agent_for_streaming(
     Returns:
         Modified agent with streaming support
     """
-    # Save original node methods
     original_propose = agent._propose_node
     original_act = agent._act_node
 
-    async def _async_report(message: str) -> None:
-        """Helper to report info messages."""
-        try:
-            await ctx.info(message)
-        except Exception as e:
-            logger.warning(f"Failed to report message: {e}")
+    async def _report(message: str) -> None:
+        await ctx.info(message)
 
-    async def _async_progress(step: int, total: int, message: str) -> None:
-        """Helper to report progress."""
-        try:
-            await ctx.report_progress(
-                progress=step,
-                total=total,
-                message=message,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to report progress: {e}")
+    async def _progress(step: int, total: int, message: str) -> None:
+        await ctx.report_progress(progress=step, total=total, message=message)
 
-    async def _async_screenshot(screenshot_png: bytes, step: int) -> None:
-        """Helper to stream compressed screenshot."""
-        try:
-            # Compress to 256px for streaming (smaller than Gemini's 512px)
-            compressed = compress_screenshot(screenshot_png, max_width=256)
-            encoded = base64.b64encode(compressed).decode("utf-8")
-            await ctx.info(
-                f"[Screenshot Step {step}] data:image/png;base64,{encoded[:100]}... ({len(compressed)} bytes)"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to stream screenshot: {e}")
+    async def _screenshot(screenshot_png: bytes, step: int) -> None:
+        compressed = compress_screenshot(screenshot_png, max_width=256)
+        encoded = base64.b64encode(compressed).decode("utf-8")
+        await ctx.info(
+            f"[Screenshot Step {step}] data:image/png;base64,{encoded[:100]}... ({len(compressed)} bytes)"
+        )
 
     def streaming_propose_node(state: CUAState) -> dict[str, Any]:
         """Wrapped propose node with streaming."""
         step = state["step"]
 
-        # Report progress
-        import asyncio
+        _safe_async_run(
+            _progress(step, step_limit, f"Step {step}: Analyzing screenshot..."),
+            "Progress reporting failed",
+        )
 
-        try:
-            asyncio.run(_async_progress(step, step_limit, f"Step {step}: Analyzing screenshot..."))
-        except Exception as e:
-            logger.warning(f"Progress reporting failed: {e}")
-
-        # Call original propose
         result = original_propose(state)
 
-        # Stream observation if available
         observation = result.get("observation", "")
         if observation:
-            try:
-                # Truncate long observations
-                obs_preview = observation[:200] + "..." if len(observation) > 200 else observation
-                asyncio.run(_async_report(f"[Step {step}] Model observes: {obs_preview}"))
-            except Exception as e:
-                logger.warning(f"Observation streaming failed: {e}")
+            obs_preview = _truncate_text(observation)
+            _safe_async_run(
+                _report(f"[Step {step}] Model observes: {obs_preview}"),
+                "Observation streaming failed",
+            )
 
-        # Report proposed actions
         proposed = result.get("proposed_actions", [])
         if proposed:
-            try:
-                action_summary = ", ".join(a["name"] for a in proposed[:3])
-                if len(proposed) > 3:
-                    action_summary += f" (+{len(proposed) - 3} more)"
-                asyncio.run(_async_report(f"[Step {step}] Proposed: {action_summary}"))
-            except Exception as e:
-                logger.warning(f"Action streaming failed: {e}")
+            summary = _format_action_summary(proposed)
+            _safe_async_run(
+                _report(f"[Step {step}] Proposed: {summary}"),
+                "Action streaming failed",
+            )
 
         return result
 
     def streaming_act_node(state: CUAState) -> dict[str, Any]:
         """Wrapped act node with streaming."""
         step = state["step"]
-
-        # Call original act
         result = original_act(state)
 
-        # Stream screenshot if available
         screenshot_png = result.get("last_screenshot_png")
         if screenshot_png:
-            import asyncio
+            _safe_async_run(
+                _screenshot(screenshot_png, step),
+                "Screenshot streaming failed",
+            )
 
-            try:
-                asyncio.run(_async_screenshot(screenshot_png, step))
-            except Exception as e:
-                logger.warning(f"Screenshot streaming failed: {e}")
-
-        # Report action result
         step_logs = result.get("step_logs", [])
         if step_logs:
             last_log = step_logs[-1]
             action = last_log.get("executed_action", {})
             result_text = last_log.get("result", "")
-
-            import asyncio
-
-            try:
-                action_name = action.get("name", "unknown")
-                args = action.get("args", {})
-                args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-                status = "✓" if "Success" in result_text else "✗"
-                asyncio.run(
-                    _async_report(f"[Step {step}] {status} Executed: {action_name}({args_str})")
-                )
-            except Exception as e:
-                logger.warning(f"Result streaming failed: {e}")
+            formatted = _format_executed_action(action, result_text)
+            _safe_async_run(
+                _report(f"[Step {step}] {formatted}"),
+                "Result streaming failed",
+            )
 
         return result
 
-    # Replace node methods (monkey-patching for streaming support)
     object.__setattr__(agent, "_propose_node", streaming_propose_node)
     object.__setattr__(agent, "_act_node", streaming_act_node)
 

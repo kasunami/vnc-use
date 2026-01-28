@@ -111,7 +111,7 @@ class NetrcStore(CredentialStore):
             n = netrc.netrc(self.file_path)
             auth = n.authenticators(hostname)
             if auth:
-                login, account, password = auth
+                login, _, password = auth  # account unused in VNC context
                 # For VNC, we store server address in login field
                 server = login if login else hostname
                 return VNCCredentials(server=server, password=password)

@@ -224,7 +224,8 @@ class TestVNCControllerClick:
         controller.click(100, 200)
 
         mock_client.mouseMove.assert_called_once_with(100, 200)
-        mock_client.mousePress.assert_called_once_with(1)
+        mock_client.mouseDown.assert_called_once_with(1)
+        mock_client.mouseUp.assert_called_once_with(1)
 
     def test_click_with_custom_button(self):
         """Should use custom button."""
@@ -234,7 +235,8 @@ class TestVNCControllerClick:
 
         controller.click(100, 200, button=3)
 
-        mock_client.mousePress.assert_called_once_with(3)
+        mock_client.mouseDown.assert_called_once_with(3)
+        mock_client.mouseUp.assert_called_once_with(3)
 
 
 class TestVNCControllerDoubleClick:
@@ -423,8 +425,9 @@ class TestVNCControllerExecuteAction:
         result = controller.execute_action("click_at", {"x": 500, "y": 500})
 
         assert result.success is True
-        # Should have called double_click (the implementation uses double_click for click_at)
-        assert mock_client.mousePress.call_count >= 1
+        # click_at uses click() which calls mouseDown/mouseUp
+        assert mock_client.mouseDown.call_count >= 1
+        assert mock_client.mouseUp.call_count >= 1
 
     def test_execute_action_type_text_at(self):
         """Should execute type_text_at action."""

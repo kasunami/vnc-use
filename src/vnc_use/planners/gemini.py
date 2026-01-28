@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 # Model ID for Gemini Computer Use
 MODEL_ID = "gemini-2.5-computer-use-preview-10-2025"
 
+# MIME type for screenshots
+PNG_MIME_TYPE = "image/png"
+
 
 def compress_screenshot(png_bytes: bytes, max_width: int = 512) -> bytes:
     """Compress screenshot to reduce token count.
@@ -132,7 +135,7 @@ class GeminiPlanner(BasePlanner):
             parts.append(
                 Part(
                     inline_data={  # type: ignore[arg-type]
-                        "mime_type": "image/png",
+                        "mime_type": PNG_MIME_TYPE,
                         "data": png_b64,
                     }
                 )
@@ -349,7 +352,7 @@ class GeminiPlanner(BasePlanner):
         response_data = {
             "url": url,
             "screenshot": {
-                "mime_type": "image/png",
+                "mime_type": PNG_MIME_TYPE,
                 "data": png_b64,
             },
         }
@@ -441,7 +444,7 @@ class GeminiPlanner(BasePlanner):
             Part(text=context_text),
             Part(
                 inline_data={  # type: ignore[arg-type]
-                    "mime_type": "image/png",
+                    "mime_type": PNG_MIME_TYPE,
                     "data": png_b64,
                 }
             ),

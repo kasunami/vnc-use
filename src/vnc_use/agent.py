@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Constants for error messages
+USER_DENIED_ACTION = "User denied action"
+
 
 class VncUseAgent:
     """VNC Computer Use Agent powered by Gemini and LangGraph.
@@ -375,8 +378,8 @@ class VncUseAgent:
                 approved: bool = asyncio.run(self.hitl_callback(safety or {}, pending))
 
                 if not approved:
-                    logger.warning("User denied action via callback")
-                    return {"done": True, "error": "User denied action"}
+                    logger.warning(f"{USER_DENIED_ACTION} via callback")
+                    return {"done": True, "error": USER_DENIED_ACTION}
 
                 logger.info("User approved action via callback")
                 return {}
@@ -396,8 +399,8 @@ class VncUseAgent:
 
             # Process user decision
             if decision == "deny":
-                logger.warning("User denied action")
-                return {"done": True, "error": "User denied action"}
+                logger.warning(USER_DENIED_ACTION)
+                return {"done": True, "error": USER_DENIED_ACTION}
 
             logger.info("User approved action")
             return {}
@@ -435,12 +438,12 @@ class VncUseAgent:
 
         return "act"
 
-    def run(self, task: str, thread_id: str | None = None) -> dict[str, Any]:
+    def run(self, task: str, _thread_id: str | None = None) -> dict[str, Any]:
         """Run the agent on a task.
 
         Args:
             task: User's task description
-            thread_id: Optional thread ID for resumable runs
+            _thread_id: Optional thread ID for resumable runs (reserved for future use)
 
         Returns:
             Final state and run artifacts
@@ -472,6 +475,7 @@ class VncUseAgent:
                 "step_logs": [],
                 "pending_calls": [],
                 "last_screenshot_png": initial_screenshot,
+                "last_observation": "",
                 "step": 0,
                 "done": False,
                 "safety": None,
