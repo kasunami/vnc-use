@@ -240,16 +240,6 @@ jobs:
           echo "bandit=$BANDIT_PATH" >> $GITHUB_OUTPUT
           echo "Bandit: $BANDIT_PATH"
 
-      # Prepare PR parameters for SonarQube
-      - name: Prepare SonarQube PR parameters
-        id: sonar_params
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "pr_params=-Dsonar.pullrequest.key=${{ github.event.pull_request.number }} -Dsonar.pullrequest.branch=${{ github.head_ref }} -Dsonar.pullrequest.base=${{ github.base_ref }}" >> $GITHUB_OUTPUT
-          else
-            echo "pr_params=" >> $GITHUB_OUTPUT
-          fi
-
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
@@ -260,5 +250,4 @@ jobs:
             -Dsonar.projectVersion=${{ github.sha }}
             -Dsonar.sarifReportPaths=${{ steps.sarif.outputs.paths }}
             -Dsonar.python.bandit.reportPaths=${{ steps.external.outputs.bandit }}
-            ${{ steps.sonar_params.outputs.pr_params }}
             -Dsonar.verbose=true
