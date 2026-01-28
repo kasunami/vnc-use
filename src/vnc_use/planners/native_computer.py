@@ -292,9 +292,7 @@ What action should I take next?""",
         logger.warning(f"Unknown action type: {action}")
         return None
 
-    def _handle_coordinate_action(
-        self, action: str, input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_coordinate_action(self, action: str, input_data: dict) -> dict[str, Any] | None:
         """Handle actions that require coordinates (clicks, moves)."""
         action_map = {
             "left_click": "click_at",
@@ -315,9 +313,7 @@ What action should I take next?""",
         logger.debug(f"{action}({x},{y}) -> {vnc_action}({x},{y})")
         return {"name": vnc_action, "args": {"x": x, "y": y}}
 
-    def _handle_simple_action(
-        self, action: str, _input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_simple_action(self, action: str, _input_data: dict) -> dict[str, Any] | None:
         """Handle simple actions with no parameters."""
         action_map = {
             "left_mouse_down": "left_mouse_down",
@@ -330,9 +326,7 @@ What action should I take next?""",
         logger.debug(f"{action} -> {vnc_action}")
         return {"name": vnc_action, "args": {}}
 
-    def _handle_text_action(
-        self, action: str, input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_text_action(self, action: str, input_data: dict) -> dict[str, Any] | None:
         """Handle actions that require text input (type, key)."""
         text = input_data.get("text")
         if not text:
@@ -347,9 +341,7 @@ What action should I take next?""",
         logger.debug(f"key -> key_combination('{text}')")
         return {"name": "key_combination", "args": {"keys": text}}
 
-    def _handle_drag_action(
-        self, _action: str, input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_drag_action(self, _action: str, input_data: dict) -> dict[str, Any] | None:
         """Handle left_click_drag action."""
         start = input_data.get("start_coordinate")
         end = input_data.get("end_coordinate")
@@ -360,9 +352,7 @@ What action should I take next?""",
 
         start_x, start_y = start
         end_x, end_y = end
-        logger.debug(
-            f"left_click_drag({start_x},{start_y})-({end_x},{end_y}) -> drag_and_drop"
-        )
+        logger.debug(f"left_click_drag({start_x},{start_y})-({end_x},{end_y}) -> drag_and_drop")
         return {
             "name": "drag_and_drop",
             "args": {
@@ -373,9 +363,7 @@ What action should I take next?""",
             },
         }
 
-    def _handle_scroll_action(
-        self, _action: str, input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_scroll_action(self, _action: str, input_data: dict) -> dict[str, Any] | None:
         """Handle scroll action."""
         scroll_direction = input_data.get("scroll_direction")
         if not scroll_direction:
@@ -391,9 +379,7 @@ What action should I take next?""",
 
         if coordinate and len(coordinate) == 2:
             x, y = coordinate
-            logger.debug(
-                f"scroll({scroll_direction}, {scroll_amount}) at ({x},{y}) -> scroll_at"
-            )
+            logger.debug(f"scroll({scroll_direction}, {scroll_amount}) at ({x},{y}) -> scroll_at")
             return {
                 "name": "scroll_at",
                 "args": {
@@ -410,9 +396,7 @@ What action should I take next?""",
             "args": {"direction": scroll_direction, "magnitude": magnitude},
         }
 
-    def _handle_hold_key_action(
-        self, _action: str, input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_hold_key_action(self, _action: str, input_data: dict) -> dict[str, Any] | None:
         """Handle hold_key action."""
         text = input_data.get("text")
         duration = input_data.get("duration")
@@ -432,9 +416,7 @@ What action should I take next?""",
         logger.debug(f"hold_key({text}, {duration}s) -> hold_key")
         return {"name": "hold_key", "args": {"key": text, "duration": duration}}
 
-    def _handle_screenshot_action(
-        self, _action: str, _input_data: dict
-    ) -> dict[str, Any] | None:
+    def _handle_screenshot_action(self, _action: str, _input_data: dict) -> dict[str, Any] | None:
         """Handle screenshot action (ignored, handled by agent loop)."""
         logger.debug("Ignoring screenshot action (handled by agent loop)")
         return None

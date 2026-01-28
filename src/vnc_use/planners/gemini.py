@@ -233,9 +233,7 @@ class GeminiPlanner(BasePlanner):
         if "error" in fr_resp:
             cleaned_response["error"] = fr_resp["error"]
 
-        return Part(
-            function_response=FunctionResponse(name=fr.name, response=cleaned_response)
-        )
+        return Part(function_response=FunctionResponse(name=fr.name, response=cleaned_response))
 
     def extract_text(self, response: Any) -> str:
         """Extract text observations/reasoning from Gemini response.
