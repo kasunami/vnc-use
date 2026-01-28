@@ -223,18 +223,10 @@ What action should I take next?""",
 
         return " ".join(text_parts).strip()
 
-    def extract_function_calls(self, response: Any) -> list[dict[str, Any]]:  # noqa: PLR0912, PLR0915
+    def extract_function_calls(self, response: Any) -> list[dict[str, Any]]:
         """Extract function calls from model response.
 
-        Maps Anthropic's computer tool actions to our VNC action format:
-        - left_click -> click_at
-        - type -> type_text
-        - key -> press_key
-        - screenshot -> (handled separately, not an action)
-        - mouse_move -> hover_at
-        - left_click_drag -> drag_and_drop
-        - right_click -> right_click_at
-        - double_click -> double_click_at
+        Maps Anthropic's computer tool actions to our VNC action format.
 
         Args:
             response: Anthropic Message object
@@ -257,211 +249,195 @@ What action should I take next?""",
                 logger.warning(f"Tool use block missing 'action' field: {block.input}")
                 continue
 
-            # Map Anthropic's computer actions to VNC actions
-            if action == "left_click":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for left_click: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                # Pass API coordinates directly - VNCController will denormalize them
-                function_calls.append({"name": "click_at", "args": {"x": x, "y": y}})
-                logger.debug(f"left_click({x},{y}) -> click_at({x},{y})")
-
-            elif action == "double_click":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for double_click: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                # Pass API coordinates directly - VNCController will denormalize them
-                function_calls.append({"name": "double_click_at", "args": {"x": x, "y": y}})
-                logger.debug(f"double_click({x},{y}) -> double_click_at({x},{y})")
-
-            elif action == "right_click":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for right_click: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                # Pass API coordinates directly - VNCController will denormalize them
-                function_calls.append({"name": "right_click_at", "args": {"x": x, "y": y}})
-                logger.debug(f"right_click({x},{y}) -> right_click_at({x},{y})")
-
-            elif action == "triple_click":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for triple_click: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                function_calls.append({"name": "triple_click_at", "args": {"x": x, "y": y}})
-                logger.debug(f"triple_click({x},{y}) -> triple_click_at({x},{y})")
-
-            elif action == "middle_click":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for middle_click: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                function_calls.append({"name": "middle_click_at", "args": {"x": x, "y": y}})
-                logger.debug(f"middle_click({x},{y}) -> middle_click_at({x},{y})")
-
-            elif action == "left_mouse_down":
-                # Press and hold left mouse button
-                function_calls.append({"name": "left_mouse_down", "args": {}})
-                logger.debug("left_mouse_down -> left_mouse_down")
-
-            elif action == "left_mouse_up":
-                # Release left mouse button
-                function_calls.append({"name": "left_mouse_up", "args": {}})
-                logger.debug("left_mouse_up -> left_mouse_up")
-
-            elif action == "cursor_position":
-                # Get current cursor position
-                function_calls.append({"name": "cursor_position", "args": {}})
-                logger.debug("cursor_position -> cursor_position")
-
-            elif action == "type":
-                text = block.input.get("text")
-                if not text:
-                    logger.warning("type action missing 'text' field")
-                    continue
-
-                function_calls.append({"name": "type_text", "args": {"text": text}})
-                logger.debug(f"type -> type_text('{text[:50]}...')")
-
-            elif action == "key":
-                text = block.input.get("text")
-                if not text:
-                    logger.warning("key action missing 'text' field")
-                    continue
-
-                # Anthropic uses special key names like "Return", "Escape", etc.
-                # Map to our key_combination format
-                function_calls.append({"name": "key_combination", "args": {"keys": text}})
-                logger.debug(f"key -> key_combination('{text}')")
-
-            elif action == "mouse_move":
-                coordinate = block.input.get("coordinate")
-                if not coordinate or len(coordinate) != 2:
-                    logger.warning(f"Invalid coordinate for mouse_move: {coordinate}")
-                    continue
-
-                x, y = coordinate
-                # Pass API coordinates directly - VNCController will denormalize them
-                function_calls.append({"name": "hover_at", "args": {"x": x, "y": y}})
-                logger.debug(f"mouse_move({x},{y}) -> hover_at({x},{y})")
-
-            elif action == "left_click_drag":
-                start = block.input.get("start_coordinate")
-                end = block.input.get("end_coordinate")
-
-                if not start or len(start) != 2 or not end or len(end) != 2:
-                    logger.warning(f"Invalid coordinates for left_click_drag: {start}, {end}")
-                    continue
-
-                start_x, start_y = start
-                end_x, end_y = end
-
-                # Pass API coordinates directly - VNCController will denormalize them
-                function_calls.append(
-                    {
-                        "name": "drag_and_drop",
-                        "args": {
-                            "start_x": start_x,
-                            "start_y": start_y,
-                            "end_x": end_x,
-                            "end_y": end_y,
-                        },
-                    }
-                )
-                logger.debug(
-                    f"left_click_drag({start_x},{start_y})-({end_x},{end_y}) -> drag_and_drop"
-                )
-
-            elif action == "screenshot":
-                # Screenshots are handled automatically by the agent loop
-                logger.debug("Ignoring screenshot action (handled by agent loop)")
-                continue
-
-            elif action == "wait":
-                # Map Claude's "wait" action to our wait_5_seconds action
-                function_calls.append({"name": "wait_5_seconds", "args": {}})
-                logger.debug("wait -> wait_5_seconds")
-
-            elif action == "scroll":
-                scroll_direction = block.input.get("scroll_direction")
-                coordinate = block.input.get("coordinate")
-                scroll_amount = block.input.get("scroll_amount", 5)
-
-                if not scroll_direction:
-                    logger.warning("scroll action missing 'scroll_direction' field")
-                    continue
-
-                # Convert scroll_amount (clicks) to magnitude (pixels)
-                # Anthropic uses scroll buttons (1 click ≈ 160 pixels)
-                magnitude = scroll_amount * 160
-
-                if coordinate and len(coordinate) == 2:
-                    # Scroll at specific location
-                    x, y = coordinate
-                    function_calls.append(
-                        {
-                            "name": "scroll_at",
-                            "args": {
-                                "x": x,
-                                "y": y,
-                                "direction": scroll_direction,
-                                "magnitude": magnitude,
-                            },
-                        }
-                    )
-                    logger.debug(
-                        f"scroll({scroll_direction}, {scroll_amount}) at ({x},{y}) -> scroll_at"
-                    )
-                else:
-                    # Scroll without moving cursor
-                    function_calls.append(
-                        {
-                            "name": "scroll_document",
-                            "args": {
-                                "direction": scroll_direction,
-                                "magnitude": magnitude,
-                            },
-                        }
-                    )
-                    logger.debug(f"scroll({scroll_direction}, {scroll_amount}) -> scroll_document")
-
-            elif action == "hold_key":
-                text = block.input.get("text")
-                duration = block.input.get("duration")
-
-                if not text:
-                    logger.warning("hold_key action missing 'text' field")
-                    continue
-
-                if duration is None or not isinstance(duration, (int, float)):
-                    logger.warning(f"hold_key action invalid duration: {duration}")
-                    continue
-
-                if duration < 0 or duration > 100:
-                    logger.warning(f"hold_key duration out of range (0-100): {duration}")
-                    continue
-
-                function_calls.append(
-                    {"name": "hold_key", "args": {"key": text, "duration": duration}}
-                )
-                logger.debug(f"hold_key({text}, {duration}s) -> hold_key")
-
-            else:
-                logger.warning(f"Unknown action type: {action}")
+            result = self._process_action(action, block.input)
+            if result:
+                function_calls.append(result)
 
         return function_calls
+
+    def _process_action(self, action: str, input_data: dict) -> dict[str, Any] | None:
+        """Process a single action and return the corresponding VNC function call.
+
+        Args:
+            action: Action type from Anthropic API
+            input_data: Input data for the action
+
+        Returns:
+            Function call dict or None if action should be skipped
+        """
+        # Action handlers dispatch table
+        handlers = {
+            "left_click": self._handle_coordinate_action,
+            "double_click": self._handle_coordinate_action,
+            "right_click": self._handle_coordinate_action,
+            "triple_click": self._handle_coordinate_action,
+            "middle_click": self._handle_coordinate_action,
+            "mouse_move": self._handle_coordinate_action,
+            "left_mouse_down": self._handle_simple_action,
+            "left_mouse_up": self._handle_simple_action,
+            "cursor_position": self._handle_simple_action,
+            "wait": self._handle_simple_action,
+            "type": self._handle_text_action,
+            "key": self._handle_text_action,
+            "left_click_drag": self._handle_drag_action,
+            "scroll": self._handle_scroll_action,
+            "hold_key": self._handle_hold_key_action,
+            "screenshot": self._handle_screenshot_action,
+        }
+
+        handler = handlers.get(action)
+        if handler:
+            return handler(action, input_data)
+
+        logger.warning(f"Unknown action type: {action}")
+        return None
+
+    def _handle_coordinate_action(
+        self, action: str, input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle actions that require coordinates (clicks, moves)."""
+        action_map = {
+            "left_click": "click_at",
+            "double_click": "double_click_at",
+            "right_click": "right_click_at",
+            "triple_click": "triple_click_at",
+            "middle_click": "middle_click_at",
+            "mouse_move": "hover_at",
+        }
+
+        coordinate = input_data.get("coordinate")
+        if not coordinate or len(coordinate) != 2:
+            logger.warning(f"Invalid coordinate for {action}: {coordinate}")
+            return None
+
+        x, y = coordinate
+        vnc_action = action_map[action]
+        logger.debug(f"{action}({x},{y}) -> {vnc_action}({x},{y})")
+        return {"name": vnc_action, "args": {"x": x, "y": y}}
+
+    def _handle_simple_action(
+        self, action: str, _input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle simple actions with no parameters."""
+        action_map = {
+            "left_mouse_down": "left_mouse_down",
+            "left_mouse_up": "left_mouse_up",
+            "cursor_position": "cursor_position",
+            "wait": "wait_5_seconds",
+        }
+
+        vnc_action = action_map[action]
+        logger.debug(f"{action} -> {vnc_action}")
+        return {"name": vnc_action, "args": {}}
+
+    def _handle_text_action(
+        self, action: str, input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle actions that require text input (type, key)."""
+        text = input_data.get("text")
+        if not text:
+            logger.warning(f"{action} action missing 'text' field")
+            return None
+
+        if action == "type":
+            logger.debug(f"type -> type_text('{text[:50]}...')")
+            return {"name": "type_text", "args": {"text": text}}
+
+        # action == "key"
+        logger.debug(f"key -> key_combination('{text}')")
+        return {"name": "key_combination", "args": {"keys": text}}
+
+    def _handle_drag_action(
+        self, _action: str, input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle left_click_drag action."""
+        start = input_data.get("start_coordinate")
+        end = input_data.get("end_coordinate")
+
+        if not start or len(start) != 2 or not end or len(end) != 2:
+            logger.warning(f"Invalid coordinates for left_click_drag: {start}, {end}")
+            return None
+
+        start_x, start_y = start
+        end_x, end_y = end
+        logger.debug(
+            f"left_click_drag({start_x},{start_y})-({end_x},{end_y}) -> drag_and_drop"
+        )
+        return {
+            "name": "drag_and_drop",
+            "args": {
+                "start_x": start_x,
+                "start_y": start_y,
+                "end_x": end_x,
+                "end_y": end_y,
+            },
+        }
+
+    def _handle_scroll_action(
+        self, _action: str, input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle scroll action."""
+        scroll_direction = input_data.get("scroll_direction")
+        if not scroll_direction:
+            logger.warning("scroll action missing 'scroll_direction' field")
+            return None
+
+        coordinate = input_data.get("coordinate")
+        scroll_amount = input_data.get("scroll_amount", 5)
+
+        # Convert scroll_amount (clicks) to magnitude (pixels)
+        # Anthropic uses scroll buttons (1 click ≈ 160 pixels)
+        magnitude = scroll_amount * 160
+
+        if coordinate and len(coordinate) == 2:
+            x, y = coordinate
+            logger.debug(
+                f"scroll({scroll_direction}, {scroll_amount}) at ({x},{y}) -> scroll_at"
+            )
+            return {
+                "name": "scroll_at",
+                "args": {
+                    "x": x,
+                    "y": y,
+                    "direction": scroll_direction,
+                    "magnitude": magnitude,
+                },
+            }
+
+        logger.debug(f"scroll({scroll_direction}, {scroll_amount}) -> scroll_document")
+        return {
+            "name": "scroll_document",
+            "args": {"direction": scroll_direction, "magnitude": magnitude},
+        }
+
+    def _handle_hold_key_action(
+        self, _action: str, input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle hold_key action."""
+        text = input_data.get("text")
+        duration = input_data.get("duration")
+
+        if not text:
+            logger.warning("hold_key action missing 'text' field")
+            return None
+
+        if duration is None or not isinstance(duration, (int, float)):
+            logger.warning(f"hold_key action invalid duration: {duration}")
+            return None
+
+        if duration < 0 or duration > 100:
+            logger.warning(f"hold_key duration out of range (0-100): {duration}")
+            return None
+
+        logger.debug(f"hold_key({text}, {duration}s) -> hold_key")
+        return {"name": "hold_key", "args": {"key": text, "duration": duration}}
+
+    def _handle_screenshot_action(
+        self, _action: str, _input_data: dict
+    ) -> dict[str, Any] | None:
+        """Handle screenshot action (ignored, handled by agent loop)."""
+        logger.debug("Ignoring screenshot action (handled by agent loop)")
+        return None
 
     def _scale_coord_to_native(self, coord: int, api_dimension: int, native_dimension: int) -> int:
         """Scale a coordinate from API resolution to native resolution.
