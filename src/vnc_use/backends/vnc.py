@@ -535,17 +535,26 @@ class VNCController:
 
         Accepts both schema names (x, y, destination_x, destination_y) and
         native planner names (start_x, start_y, end_x, end_y).
+
+        Raises:
+            ValueError: If required coordinates are missing
         """
         # Support both naming conventions
-        start_x = args.get("start_x", args.get("x"))
-        start_y = args.get("start_y", args.get("y"))
-        end_x = args.get("end_x", args.get("destination_x"))
-        end_y = args.get("end_y", args.get("destination_y"))
+        start_x = args.get("start_x") or args.get("x")
+        start_y = args.get("start_y") or args.get("y")
+        end_x = args.get("end_x") or args.get("destination_x")
+        end_y = args.get("end_y") or args.get("destination_y")
 
-        x0 = denorm_x(start_x, width, width)
-        y0 = denorm_y(start_y, height, height)
-        x1 = denorm_x(end_x, width, width)
-        y1 = denorm_y(end_y, height, height)
+        if start_x is None or start_y is None or end_x is None or end_y is None:
+            raise ValueError(
+                "drag_and_drop requires start coordinates (start_x/x, start_y/y) "
+                "and end coordinates (end_x/destination_x, end_y/destination_y)"
+            )
+
+        x0 = denorm_x(int(start_x), width, width)
+        y0 = denorm_y(int(start_y), height, height)
+        x1 = denorm_x(int(end_x), width, width)
+        y1 = denorm_y(int(end_y), height, height)
         self.drag_and_drop(x0, y0, x1, y1)
 
     def _action_wait_5_seconds(self, args: dict, width: int, height: int) -> None:
