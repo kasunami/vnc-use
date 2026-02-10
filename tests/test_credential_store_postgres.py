@@ -1,23 +1,24 @@
 """Tests for PostgreSQL credential store."""
 
+import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock psycopg2 before importing the module under test
+from vnc_use.credential_store import VNCCredentials
+
+# Mock psycopg2 before importing credential_store_postgres (which requires it)
 mock_psycopg2 = MagicMock()
 mock_psycopg2.extras = MagicMock()
 mock_psycopg2.extras.RealDictCursor = MagicMock()
 sys.modules["psycopg2"] = mock_psycopg2
 sys.modules["psycopg2.extras"] = mock_psycopg2.extras
 
-# Import after mocking psycopg2 (E402 is intentional here)
-from vnc_use.credential_store import VNCCredentials  # noqa: E402
-from vnc_use.credential_store_postgres import (  # noqa: E402
-    PostgreSQLCredentialStore,
-    get_maistack_store,
-)
+# Use importlib to load after mocking - avoids E402 since this is a function call
+_pg_module = importlib.import_module("vnc_use.credential_store_postgres")
+PostgreSQLCredentialStore = _pg_module.PostgreSQLCredentialStore
+get_maistack_store = _pg_module.get_maistack_store
 
 
 class TestPostgreSQLCredentialStoreInit:

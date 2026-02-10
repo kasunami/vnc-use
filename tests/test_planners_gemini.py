@@ -81,7 +81,7 @@ class TestGeminiPlannerInit:
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
         with patch("src.vnc_use.planners.gemini.genai") as mock_genai:
-            _planner = GeminiPlanner()  # noqa: F841 - creating to test init
+            GeminiPlanner()
 
             mock_genai.Client.assert_called_once_with(api_key="gemini_env_key")
 
@@ -91,7 +91,7 @@ class TestGeminiPlannerInit:
         monkeypatch.setenv("GOOGLE_API_KEY", "google_env_key")
 
         with patch("src.vnc_use.planners.gemini.genai") as mock_genai:
-            _planner = GeminiPlanner()  # noqa: F841 - creating to test init
+            GeminiPlanner()
 
             mock_genai.Client.assert_called_once_with(api_key="google_env_key")
 

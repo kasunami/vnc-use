@@ -47,7 +47,7 @@ class TestAnthropicPlannerInit:
             mock_llm.bind_tools.return_value = MagicMock()
             mock_chat.return_value = mock_llm
 
-            _planner = AnthropicPlanner()  # noqa: F841 - creating to test init
+            AnthropicPlanner()
 
             call_kwargs = mock_chat.call_args.kwargs
             assert call_kwargs["api_key"] == "env_api_key"
