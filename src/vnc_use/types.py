@@ -1,9 +1,9 @@
 """Type definitions for vnc-use agent."""
 
 from typing import Any, Literal
-from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 
 class StepLog(TypedDict):
