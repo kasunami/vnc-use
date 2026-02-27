@@ -6,7 +6,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from PIL import Image
 from vncdotool import api as vnc_api
@@ -100,7 +100,7 @@ class VNCController:
                        - 512: For compressed screenshot width (Claude with 512px screenshots)
                        - None: Auto-detect from VNC_COORD_MAX env var (default 512)
         """
-        self.client: vnc_api.VNCDoToolClient | None = None
+        self.client: Any = None
         self._screen_size: tuple[int, int] | None = None
         self.vnc_host = vnc_host
 
@@ -133,7 +133,9 @@ class VNCController:
     def disconnect(self) -> None:
         """Disconnect from VNC server."""
         if self.client:
-            self.client.disconnect()
+            disconnect = getattr(self.client, "disconnect", None)
+            if callable(disconnect):
+                disconnect()
             self.client = None
             logger.info("VNC connection closed")
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from pydantic import SecretStr
 
 from .base import BasePlanner
 from .gemini import compress_screenshot
@@ -47,8 +48,8 @@ class AnthropicPlanner(BasePlanner):
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         self.llm = ChatAnthropic(
-            model=self.model,  # type: ignore[call-arg]
-            api_key=api_key,  # type: ignore[arg-type]
+            model_name=self.model,
+            anthropic_api_key=SecretStr(api_key),
             temperature=0.0,
         )
 
@@ -122,7 +123,7 @@ Coordinates are normalized to a 0-999 grid. Convert screen positions proportiona
             },
         ]
 
-        messages.append(HumanMessage(content=user_content))  # type: ignore[arg-type]
+        messages.append(HumanMessage(content=user_content))
 
         logger.debug(
             f"Calling Anthropic with screenshot ({len(screenshot_png)} -> {len(compressed)} bytes)"

@@ -7,8 +7,8 @@ import base64
 import logging
 import os
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import psycopg2  # ty: ignore[unresolved-import]
+from psycopg2.extras import RealDictCursor  # ty: ignore[unresolved-import]
 
 from .credential_store import CredentialStore, VNCCredentials
 

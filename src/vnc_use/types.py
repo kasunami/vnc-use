@@ -1,6 +1,7 @@
 """Type definitions for vnc-use agent."""
 
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
+from typing_extensions import TypedDict
 
 from pydantic import BaseModel, Field
 

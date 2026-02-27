@@ -16,7 +16,7 @@ from typing import Any
 from fastmcp import Context, FastMCP
 
 from .agent import VncUseAgent
-from .credential_store import get_default_store
+from .credential_store import VNCCredentials, get_default_store
 from .planners.gemini import compress_screenshot
 from .types import CUAState
 
@@ -42,7 +42,7 @@ def _build_error_result(error_msg: str) -> dict[str, Any]:
 
 async def _lookup_credentials(
     hostname: str, ctx: Context | None
-) -> tuple[Any | None, dict[str, Any] | None]:
+) -> tuple[VNCCredentials | None, dict[str, Any] | None]:
     """Look up credentials from store.
 
     Returns:
@@ -156,6 +156,8 @@ async def execute_vnc_task(
         credentials, error_result = await _lookup_credentials(hostname, ctx)
         if error_result:
             return error_result
+        if credentials is None:
+            return _build_error_result(f"Credentials lookup failed for hostname '{hostname}'")
 
         if ctx:
             await ctx.info(f"Found credentials for {hostname}")

@@ -457,7 +457,7 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=contents,  # type: ignore[arg-type]
+            contents=contents,
             config=config,
         )
 

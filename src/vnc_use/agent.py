@@ -131,7 +131,7 @@ class VncUseAgent:
         Returns:
             Compiled graph (CompiledStateGraph)
         """
-        builder = StateGraph(CUAState)
+        builder = StateGraph(CUAState)  # ty: ignore[invalid-argument-type]
 
         # Add nodes
         builder.add_node("propose", self._propose_node)

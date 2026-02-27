@@ -197,7 +197,7 @@ class KeyringStore(CredentialStore):
     def __init__(self):
         """Initialize keyring credential store."""
         try:
-            import keyring
+            import keyring  # ty: ignore[unresolved-import]
 
             self.keyring = keyring
         except ImportError as e:
