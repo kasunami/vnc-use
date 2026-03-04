@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 try:
     from keyring.errors import PasswordDeleteError
 except ImportError:
+
     class PasswordDeleteError(Exception):
         """Fallback when keyring is not installed."""
 
