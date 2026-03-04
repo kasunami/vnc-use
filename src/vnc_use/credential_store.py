@@ -13,6 +13,13 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
+try:
+    from keyring.errors import PasswordDeleteError
+except ImportError:
+    class PasswordDeleteError(Exception):
+        """Fallback when keyring is not installed."""
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,7 +204,7 @@ class KeyringStore(CredentialStore):
     def __init__(self):
         """Initialize keyring credential store."""
         try:
-            import keyring  # ty: ignore[unresolved-import]
+            import keyring
 
             self.keyring = keyring
         except ImportError as e:
@@ -235,7 +242,7 @@ class KeyringStore(CredentialStore):
             self.keyring.delete_password(self.SERVICE_NAME, hostname)
             logger.info(f"Deleted credentials for {hostname} from keyring")
             return True
-        except self.keyring.errors.PasswordDeleteError:
+        except PasswordDeleteError:
             return False
         except Exception as e:
             logger.error(f"Failed to delete credentials from keyring: {e}")
