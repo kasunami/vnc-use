@@ -6,7 +6,7 @@ import pytest
 
 from vnc_use.mcp_server import mcp
 
-mcp_any = cast(Any, mcp)
+mcp_any = cast("Any", mcp)
 
 
 def test_mcp_server_initialization():

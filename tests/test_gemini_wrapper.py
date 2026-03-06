@@ -48,18 +48,18 @@ def test_config_building():
         api_key="fake_key_for_testing",
     )
 
-    config = cast(Any, planner.build_config())
+    config = cast("Any", planner.build_config())
 
     assert config is not None, "Config should not be None"
-    tools = cast(list[Any], config.tools or [])
+    tools = cast("list[Any]", config.tools or [])
     assert len(tools) == 1, "Should have one tool"
-    computer_use = cast(Any, tools[0]).computer_use
+    computer_use = cast("Any", tools[0]).computer_use
     assert computer_use is not None, "Should have computer_use tool"
-    excluded = cast(list[str], computer_use.excluded_predefined_functions or [])
+    excluded = cast("list[str]", computer_use.excluded_predefined_functions or [])
     assert "drag_and_drop" in excluded, (
         "Should exclude specified actions"
     )
-    thinking_config = cast(Any, config.thinking_config)
+    thinking_config = cast("Any", config.thinking_config)
     assert thinking_config is not None
     assert not thinking_config.include_thoughts, "Should not include thoughts"
 
@@ -79,7 +79,7 @@ def test_start_contents():
     contents = planner.start_contents("Open a browser")
     assert len(contents) == 1, "Should have one content item"
     assert contents[0].role == "user", "Should be user role"
-    first_parts = cast(list[Any], contents[0].parts or [])
+    first_parts = cast("list[Any]", contents[0].parts or [])
     assert len(first_parts) == 1, "Should have one part (text)"
     print("  ✓ Task-only contents built")
 
@@ -87,7 +87,7 @@ def test_start_contents():
     screenshot = create_mock_screenshot()
     contents_with_img = planner.start_contents("Click the button", screenshot)
     assert len(contents_with_img) == 1, "Should have one content item"
-    second_parts = cast(list[Any], contents_with_img[0].parts or [])
+    second_parts = cast("list[Any]", contents_with_img[0].parts or [])
     assert len(second_parts) == 2, "Should have two parts (text + image)"
     print(f"  ✓ Contents with screenshot built ({len(screenshot)} bytes)")
 
@@ -107,10 +107,10 @@ def test_function_response_building():
         error=None,
     )
 
-    function_response = cast(Any, part.function_response)
+    function_response = cast("Any", part.function_response)
     assert function_response is not None, "Should have function_response"
     assert function_response.name == "click_at", "Name should match"
-    response = cast(dict[str, Any], function_response.response or {})
+    response = cast("dict[str, Any]", function_response.response or {})
     assert "url" in response, "Should have url field"
     assert "screenshot" in response, "Should have screenshot"
     print("  ✓ FunctionResponse built successfully")
@@ -124,8 +124,8 @@ def test_function_response_building():
         error="Connection lost",
     )
 
-    error_response = cast(Any, error_part.function_response)
-    error_payload = cast(dict[str, Any], (error_response.response if error_response else {}) or {})
+    error_response = cast("Any", error_part.function_response)
+    error_payload = cast("dict[str, Any]", (error_response.response if error_response else {}) or {})
     assert "error" in error_payload, "Should have error field"
     print("  ✓ FunctionResponse with error built")
 

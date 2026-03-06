@@ -124,7 +124,7 @@ Coordinates are normalized to a 0-999 grid. Convert screen positions proportiona
         ]
 
         messages.append(
-            HumanMessage(content=cast(list[str | dict[str, Any]], user_content))
+            HumanMessage(content=cast("list[str | dict[str, Any]]", user_content))
         )
 
         logger.debug(
