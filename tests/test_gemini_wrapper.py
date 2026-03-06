@@ -56,9 +56,7 @@ def test_config_building():
     computer_use = cast("Any", tools[0]).computer_use
     assert computer_use is not None, "Should have computer_use tool"
     excluded = cast("list[str]", computer_use.excluded_predefined_functions or [])
-    assert "drag_and_drop" in excluded, (
-        "Should exclude specified actions"
-    )
+    assert "drag_and_drop" in excluded, "Should exclude specified actions"
     thinking_config = cast("Any", config.thinking_config)
     assert thinking_config is not None
     assert not thinking_config.include_thoughts, "Should not include thoughts"
@@ -125,7 +123,9 @@ def test_function_response_building():
     )
 
     error_response = cast("Any", error_part.function_response)
-    error_payload = cast("dict[str, Any]", (error_response.response if error_response else {}) or {})
+    error_payload = cast(
+        "dict[str, Any]", (error_response.response if error_response else {}) or {}
+    )
     assert "error" in error_payload, "Should have error field"
     print("  ✓ FunctionResponse with error built")
 
