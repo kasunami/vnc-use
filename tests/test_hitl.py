@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Test HITL callback integration."""
 
+from typing import Any, cast
+
 import pytest
 
 from vnc_use.agent import VncUseAgent
@@ -46,7 +48,7 @@ def test_hitl_callback():
     }
 
     print("\n✓ Invoking HITL gate node...")
-    result = agent._hitl_gate_node(state)
+    result = agent._hitl_gate_node(cast(Any, state))
 
     # Verify callback was invoked
     assert callback_invoked, "Callback was not invoked"
@@ -83,7 +85,7 @@ def test_hitl_denial():
         "pending_calls": [{"name": "key_combination", "args": {"keys": "control+alt+delete"}}],
     }
 
-    result = agent._hitl_gate_node(state)
+    result = agent._hitl_gate_node(cast(Any, state))
 
     # Verify denial
     assert result.get("done") is True, "Action should be marked done after denial"

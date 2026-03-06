@@ -525,6 +525,7 @@ class TestVNCControllerExecuteAction:
         result = controller.execute_action("unknown_action", {})
 
         assert result.success is False
+        assert result.error is not None
         assert "Unknown action" in result.error
 
     def test_execute_action_handles_exception(self):
@@ -545,6 +546,7 @@ class TestVNCControllerExecuteAction:
         result = controller.execute_action("click_at", {"x": 100, "y": 200})
 
         assert result.success is False
+        assert result.error is not None
         assert "VNC error" in result.error
 
     def test_execute_action_hover_at(self):
@@ -808,6 +810,7 @@ class TestVNCControllerExecuteAction:
         result = controller.execute_action("drag_and_drop", {"x": 100})  # Missing other coords
 
         assert result.success is False
+        assert result.error is not None
         assert "requires start coordinates" in result.error
 
     def test_execute_action_screenshot_fails_in_error_handler(self):

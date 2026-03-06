@@ -3,7 +3,7 @@
 import base64
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai.types import (
@@ -457,7 +457,7 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=contents,
+            contents=cast(Any, contents),
             config=config,
         )
 

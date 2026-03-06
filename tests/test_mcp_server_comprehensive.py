@@ -1,6 +1,7 @@
 """Comprehensive tests for mcp_server.py module."""
 
 import io
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,10 +13,12 @@ from src.vnc_use.mcp_server import (
     mcp,
 )
 
+mcp_any = cast(Any, mcp)
+
 
 def get_execute_vnc_task_fn():
     """Get the underlying execute_vnc_task function."""
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     tool = tools.get("execute_vnc_task")
     return tool.fn if tool else None
 
@@ -45,7 +48,7 @@ class TestMCPServerInitialization:
 
     def test_execute_vnc_task_registered(self):
         """execute_vnc_task should be registered as a tool."""
-        tools = mcp._tool_manager._tools
+        tools = mcp_any._tool_manager._tools
         assert "execute_vnc_task" in tools
 
     def test_execute_vnc_task_fn_accessible(self):
@@ -395,7 +398,7 @@ class TestWrappedProposeNode:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        result = wrapped._propose_node(state)
+        result = wrapped._propose_node(cast(Any, state))
 
         # Original should have been called
         original_propose.assert_called_once_with(state)
@@ -418,7 +421,7 @@ class TestWrappedActNode:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        result = wrapped._act_node(state)
+        result = wrapped._act_node(cast(Any, state))
 
         # Original should have been called
         original_act.assert_called_once_with(state)
@@ -672,7 +675,7 @@ class TestStreamingWrapperEdgeCases:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 5}
-        result = wrapped._propose_node(state)
+        result = wrapped._propose_node(cast(Any, state))
 
         # Original should have been called
         original_propose.assert_called_once_with(state)
@@ -692,7 +695,7 @@ class TestStreamingWrapperEdgeCases:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        result = wrapped._propose_node(state)
+        result = wrapped._propose_node(cast(Any, state))
 
         # Should not raise, original should have been called
         original_propose.assert_called_once_with(state)
@@ -722,7 +725,7 @@ class TestStreamingWrapperEdgeCases:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        result = wrapped._act_node(state)
+        result = wrapped._act_node(cast(Any, state))
 
         # Original should have been called
         original_act.assert_called_once_with(state)
@@ -741,7 +744,7 @@ class TestStreamingWrapperEdgeCases:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        wrapped._act_node(state)
+        wrapped._act_node(cast(Any, state))
 
         # Should not raise
         original_act.assert_called_once_with(state)
@@ -769,7 +772,7 @@ class TestStreamingWrapperEdgeCases:
         wrapped = _wrap_agent_for_streaming(mock_agent, mock_ctx, 40)
 
         state = {"step": 1}
-        wrapped._act_node(state)
+        wrapped._act_node(cast(Any, state))
 
         # Original should have been called
         original_act.assert_called_once_with(state)

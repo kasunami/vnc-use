@@ -93,7 +93,6 @@ def test_browser_task():
         step_limit=20,
         seconds_timeout=180,
         hitl_mode=False,
-        include_initial_screenshot=True,
     )
     print("✓ Agent initialized")
 

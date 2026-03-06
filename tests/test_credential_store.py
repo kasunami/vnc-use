@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -424,6 +425,8 @@ class TestEnvironmentStore:
         result1 = store.get("host1")
         result2 = store.get("host2")
 
+        assert result1 is not None
+        assert result2 is not None
         assert result1.server == result2.server == "fixed::5901"
 
     def test_set_raises_not_implemented(self):
@@ -584,29 +587,32 @@ class TestGetDefaultStore:
 
     def test_includes_netrc_store(self):
         """Should include NetrcStore in chain."""
-        result = get_default_store()
-        store_types = [type(s).__name__ for s in result.stores]
+        result = cast(ChainedStore, get_default_store())
+        stores = cast(list[Any], result.stores)
+        store_types = [type(s).__name__ for s in stores]
         assert "NetrcStore" in store_types
 
     def test_includes_environment_store(self):
         """Should include EnvironmentStore in chain."""
-        result = get_default_store()
-        store_types = [type(s).__name__ for s in result.stores]
+        result = cast(ChainedStore, get_default_store())
+        stores = cast(list[Any], result.stores)
+        store_types = [type(s).__name__ for s in stores]
         assert "EnvironmentStore" in store_types
 
     def test_keyring_included_when_available(self):
         """Should include KeyringStore when keyring available."""
         mock_keyring = MagicMock()
         with patch.dict("sys.modules", {"keyring": mock_keyring}):
-            result = get_default_store()
-            store_types = [type(s).__name__ for s in result.stores]
+            result = cast(ChainedStore, get_default_store())
+            stores = cast(list[Any], result.stores)
+            store_types = [type(s).__name__ for s in stores]
             assert "KeyringStore" in store_types
 
     def test_works_without_keyring(self):
         """Should work when keyring not available."""
         with patch("src.vnc_use.credential_store.KeyringStore") as mock_keyring_cls:
             mock_keyring_cls.side_effect = ImportError("No keyring")
-            result = get_default_store()
+            result = cast(ChainedStore, get_default_store())
             assert isinstance(result, ChainedStore)
             # Should still have at least NetrcStore and EnvironmentStore
             assert len(result.stores) >= 2

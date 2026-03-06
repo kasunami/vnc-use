@@ -1,8 +1,12 @@
 """Tests for MCP server functionality."""
 
+from typing import Any, cast
+
 import pytest
 
 from vnc_use.mcp_server import mcp
+
+mcp_any = cast(Any, mcp)
 
 
 def test_mcp_server_initialization():
@@ -13,13 +17,13 @@ def test_mcp_server_initialization():
 def test_execute_vnc_task_tool_exists():
     """Test that execute_vnc_task tool is registered."""
     # Get registered tools
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     assert "execute_vnc_task" in tools
 
 
 def test_execute_vnc_task_tool_registration():
     """Test execute_vnc_task is properly registered as a FunctionTool."""
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     tool = tools.get("execute_vnc_task")
 
     assert tool is not None
@@ -36,7 +40,7 @@ async def test_execute_vnc_task_without_vnc():
     Tests the credential lookup failure path.
     """
     # Get the underlying function from the tool
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     tool = tools.get("execute_vnc_task")
 
     # Skip if we can't get the function
@@ -65,7 +69,7 @@ async def test_execute_vnc_task_parameter_validation():
     Tests the return value structure when no credentials found.
     """
     # Get the underlying function from the tool
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     tool = tools.get("execute_vnc_task")
 
     # Skip if we can't get the function
@@ -97,4 +101,4 @@ def test_mcp_server_name():
 def test_mcp_tool_manager():
     """Test tool manager is properly configured."""
     assert hasattr(mcp, "_tool_manager")
-    assert len(mcp._tool_manager._tools) > 0
+    assert len(mcp_any._tool_manager._tools) > 0

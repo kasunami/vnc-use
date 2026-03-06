@@ -3,7 +3,7 @@
 import base64
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -123,7 +123,9 @@ Coordinates are normalized to a 0-999 grid. Convert screen positions proportiona
             },
         ]
 
-        messages.append(HumanMessage(content=user_content))
+        messages.append(
+            HumanMessage(content=cast(list[str | dict[str, Any]], user_content))
+        )
 
         logger.debug(
             f"Calling Anthropic with screenshot ({len(screenshot_png)} -> {len(compressed)} bytes)"

@@ -1,6 +1,7 @@
 """Tests for planners/gemini.py module."""
 
 import io
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -137,7 +138,9 @@ class TestGeminiPlannerBuildConfig:
             planner = GeminiPlanner(api_key="key")
             config = planner.build_config()
 
-            assert config.tools[0].computer_use is not None
+            tools = cast(list[Any], config.tools or [])
+            assert tools
+            assert cast(Any, tools[0]).computer_use is not None
 
     def test_build_config_with_excluded_actions(self):
         """Should pass excluded actions to ComputerUse."""
@@ -145,7 +148,10 @@ class TestGeminiPlannerBuildConfig:
             planner = GeminiPlanner(api_key="key", excluded_actions=["scroll_at"])
             config = planner.build_config()
 
-            assert config.tools[0].computer_use.excluded_predefined_functions == ["scroll_at"]
+            tools = cast(list[Any], config.tools or [])
+            computer_use = cast(Any, tools[0]).computer_use
+            assert computer_use is not None
+            assert computer_use.excluded_predefined_functions == ["scroll_at"]
 
     def test_build_config_with_thinking_enabled(self):
         """Should configure thinking when enabled."""
@@ -168,8 +174,9 @@ class TestGeminiPlannerStartContents:
 
             assert len(contents) == 1
             assert contents[0].role == "user"
-            assert len(contents[0].parts) == 1
-            assert contents[0].parts[0].text == "Click the button"
+            parts = cast(list[Any], contents[0].parts or [])
+            assert len(parts) == 1
+            assert cast(Any, parts[0]).text == "Click the button"
 
     def test_start_contents_with_screenshot(self):
         """Should include screenshot when provided."""
@@ -182,9 +189,10 @@ class TestGeminiPlannerStartContents:
             )
 
             assert len(contents) == 1
-            assert len(contents[0].parts) == 2
+            parts = cast(list[Any], contents[0].parts or [])
+            assert len(parts) == 2
             # Second part should be inline_data with PNG
-            assert contents[0].parts[1].inline_data is not None
+            assert cast(Any, parts[1]).inline_data is not None
 
     def test_start_contents_compresses_screenshot(self):
         """Should compress large screenshots."""
@@ -195,7 +203,8 @@ class TestGeminiPlannerStartContents:
             # Should not raise and should compress
             contents = planner.start_contents(task="Task", initial_screenshot_png=large_screenshot)
 
-            assert len(contents[0].parts) == 2
+            parts = cast(list[Any], contents[0].parts or [])
+            assert len(parts) == 2
 
 
 class TestGeminiPlannerGenerate:
@@ -212,7 +221,7 @@ class TestGeminiPlannerGenerate:
             planner = GeminiPlanner(api_key="key")
 
             contents = [MagicMock(role="user", parts=[])]
-            result = planner.generate(contents)
+            result = planner.generate(cast(Any, contents))
 
             mock_client.models.generate_content.assert_called_once()
             assert result == mock_response
@@ -226,7 +235,7 @@ class TestGeminiPlannerGenerate:
             planner = GeminiPlanner(api_key="key")
 
             contents = [MagicMock(role="user", parts=[])]
-            planner.generate(contents)
+            planner.generate(cast(Any, contents))
 
             call_args = mock_client.models.generate_content.call_args
             assert call_args.kwargs["config"] is not None
@@ -241,7 +250,7 @@ class TestGeminiPlannerGenerate:
             planner = GeminiPlanner(api_key="key")
 
             contents = [MagicMock(role="user", parts=[])]
-            planner.generate(contents, config=custom_config)
+            planner.generate(cast(Any, contents), config=custom_config)
 
             call_args = mock_client.models.generate_content.call_args
             assert call_args.kwargs["config"] == custom_config
@@ -255,7 +264,7 @@ class TestGeminiPlannerGenerate:
             planner = GeminiPlanner(api_key="key")
 
             contents = [MagicMock(role="user", parts=[])]
-            planner.generate(contents)
+            planner.generate(cast(Any, contents))
 
             call_args = mock_client.models.generate_content.call_args
             assert call_args.kwargs["model"] == MODEL_ID
@@ -285,7 +294,7 @@ class TestGeminiPlannerGenerate:
             new_content.parts = []
 
             contents = [old_content, new_content]
-            planner.generate(contents)
+            planner.generate(cast(Any, contents))
 
             # Should have called API
             mock_client.models.generate_content.assert_called_once()
@@ -622,7 +631,9 @@ class TestGeminiPlannerBuildFunctionResponse:
                 screenshot_png=screenshot,
             )
 
-            response_data = result.function_response.response
+            function_response = cast(Any, result.function_response)
+            assert function_response is not None
+            response_data = cast(dict[str, Any], function_response.response or {})
             assert "screenshot" in response_data
             assert response_data["screenshot"]["mime_type"] == "image/png"
 
@@ -638,7 +649,9 @@ class TestGeminiPlannerBuildFunctionResponse:
                 url="http://example.com",
             )
 
-            response_data = result.function_response.response
+            function_response = cast(Any, result.function_response)
+            assert function_response is not None
+            response_data = cast(dict[str, Any], function_response.response or {})
             assert response_data["url"] == "http://example.com"
 
     def test_build_function_response_includes_error(self):
@@ -653,7 +666,9 @@ class TestGeminiPlannerBuildFunctionResponse:
                 error="Click failed",
             )
 
-            response_data = result.function_response.response
+            function_response = cast(Any, result.function_response)
+            assert function_response is not None
+            response_data = cast(dict[str, Any], function_response.response or {})
             assert response_data["error"] == "Click failed"
 
 
@@ -694,7 +709,8 @@ class TestGeminiPlannerAppendFunctionResponse:
             )
 
             assert len(result) == 2
-            assert result[0].parts[0].text == "existing"
+            first_parts = cast(list[Any], result[0].parts or [])
+            assert cast(Any, first_parts[0]).text == "existing"
 
 
 class TestGeminiPlannerGenerateStateless:
@@ -757,7 +773,7 @@ class TestGeminiPlannerGenerateStateless:
             )
 
             call_args = mock_client.models.generate_content.call_args
-            contents = call_args.kwargs["contents"]
+            contents = cast(list[Any], call_args.kwargs["contents"])
             first_part_text = contents[0].parts[0].text
             assert "Clicked button" in first_part_text
             assert "Typed text" in first_part_text
@@ -806,10 +822,11 @@ class TestGeminiPlannerGenerateStateless:
             )
 
             call_args = mock_client.models.generate_content.call_args
-            contents = call_args.kwargs["contents"]
+            contents = cast(list[Any], call_args.kwargs["contents"])
             # Second part should be image
-            assert len(contents[0].parts) == 2
-            assert contents[0].parts[1].inline_data is not None
+            first_parts = cast(list[Any], contents[0].parts or [])
+            assert len(first_parts) == 2
+            assert cast(Any, first_parts[1]).inline_data is not None
 
 
 class TestGeminiComputerUseAlias:
