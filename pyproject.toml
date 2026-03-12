@@ -1,32 +1,52 @@
 [project]
 name = "vnc-use"
-version = "0.1.0"
-description = "LangGraph agent for Computer Use via VNC with Gemini 2.5"
+version = "0.2.0"
+description = "LangGraph agent for Computer Use via VNC with multi-model support (Gemini, Anthropic)"
 readme = "README.md"
 authors = [
     { name = "Johann-Peter Hartmann", email = "johann-peter.hartmann@mayflower.de" }
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "langgraph>=0.2",
-    "langgraph-checkpoint-sqlite>=1.0",
+    "langgraph>=1.0.8",
+    "langgraph-checkpoint>=3.0.0",
+    "langgraph-checkpoint-sqlite>=3.0.3",
     "google-genai>=0.3",
     "vncdotool>=1.2",
-    "pillow>=10.0",
+    "pillow>=12.1.1",
     "typing-extensions>=4.8",
     "pydantic>=2.0",
-    "fastmcp>=2.3",
-    "langchain-core>=0.3.0",
+    "fastmcp>=2.14.4",
+    "langchain-core>=1.2.11",
     "langchain-anthropic>=0.3.0",
+    "anthropic>=0.40.0",
+    # Security: transitive dependency version constraints
+    "authlib>=1.6.6",
+    "cryptography>=46.0.5",
+    "langsmith>=0.6.3",
+    "mcp>=1.23.0",
+    "pyasn1>=0.6.2",
+    "python-multipart>=0.0.22",
+    "starlette>=0.49.1",
+    "urllib3>=2.6.3",
+    "werkzeug>=3.1.6",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=7.0.0",
+    "mypy>=1.19.1",
+    "ruff>=0.14.0",
+    "bandit>=1.9.3",
+    "pre-commit>=4.5.1",
 ]
 keyring = [
     "keyring>=24.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.0",
 ]
 
 [project.scripts]
@@ -39,7 +59,129 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# SonarQube-compatible output (junit.xml and coverage.xml)
+# Usage: pytest --junitxml=junit.xml --cov=src --cov-report=xml
+addopts = "--junitxml=junit.xml"
+markers = [
+    "external: marks tests that require network access to external services",
+    "slow: marks tests that may take several seconds due to network latency",
+]
+
+[tool.coverage.run]
+# Use relative paths in coverage.xml for SonarQube compatibility
+relative_files = true
+source = ["src"]
+# Exclude CLI scripts that are hard to unit test
+omit = [
+    "src/vnc_use/cli.py",
+    "src/vnc_use/mcp_cli.py",
+    "src/vnc_use/credentials_cli.py",
+]
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "S",    # flake8-bandit (security) - for SARIF/SonarQube
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "B904",   # raise from inside except without explicit exception chaining
+    "B905",   # zip without strict parameter (Python 3.10+)
+    "SIM105", # use contextlib.suppress
+    "SIM108", # use ternary operator instead of if-else
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # assert in tests is expected
+    "S105",   # hardcoded passwords in test fixtures are intentional
+    "S106",   # hardcoded test passwords are intentional
+    "S108",   # /tmp paths in tests are intentional
+    "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls are intentional in test setup
+    "S607",   # partial executable paths (docker-compose) are intentional
+    "SIM117", # nested with statements are clearer in tests
+    "TC001",  # type imports don't need TYPE_CHECKING in tests
+]
+"**/test_*.py" = [
+    "S101",   # assert in tests is expected
+    "S105",   # hardcoded passwords in test fixtures are intentional
+    "S106",   # hardcoded test passwords are intentional
+    "S108",   # /tmp paths in tests are intentional
+    "S311",   # pseudo-random generator ok in tests
+    "S603",   # subprocess calls are intentional in test setup
+    "S607",   # partial executable paths (docker-compose) are intentional
+    "SIM117", # nested with statements are clearer in tests
+    "TC001",  # type imports don't need TYPE_CHECKING in tests
+]
+# CLI scripts use subprocess and argparse by design
+"**/cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+    "S607",   # partial path is intentional for system commands
+]
+"**/mcp_cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+    "S607",   # partial path is intentional for system commands
+]
+"**/credentials_cli.py" = [
+    "S603",   # subprocess calls are intentional in CLI
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Ignore errors for external dependencies without stubs
+[[tool.mypy.overrides]]
+module = [
+    "langgraph.*",
+    "langgraph_checkpoint_sqlite.*",
+    "google.*",
+    "vncdotool.*",
+    "fastmcp.*",
+    "langchain_core.*",
+    "langchain_anthropic.*",
+    "anthropic.*",
+    "PIL.*",
+    "keyring.*",
+    "psycopg2.*",
+]
+ignore_missing_imports = true
+
+# Relax type checking in tests
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_errors = true

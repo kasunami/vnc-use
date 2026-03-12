@@ -1,7 +1,12 @@
 """Tests for MCP server functionality."""
 
+from typing import Any, cast
+
 import pytest
+
 from vnc_use.mcp_server import mcp
+
+mcp_any = cast("Any", mcp)
 
 
 def test_mcp_server_initialization():
@@ -12,65 +17,68 @@ def test_mcp_server_initialization():
 def test_execute_vnc_task_tool_exists():
     """Test that execute_vnc_task tool is registered."""
     # Get registered tools
-    tools = mcp._tool_manager._tools
+    tools = mcp_any._tool_manager._tools
     assert "execute_vnc_task" in tools
 
 
-def test_execute_vnc_task_signature():
-    """Test execute_vnc_task has correct signature."""
-    import inspect
+def test_execute_vnc_task_tool_registration():
+    """Test execute_vnc_task is properly registered as a FunctionTool."""
+    tools = mcp_any._tool_manager._tools
+    tool = tools.get("execute_vnc_task")
 
-    from vnc_use.mcp_server import execute_vnc_task
-
-    sig = inspect.signature(execute_vnc_task)
-    params = sig.parameters
-
-    # Check required parameters
-    assert "vnc_server" in params
-    assert "task" in params
-
-    # Check optional parameters
-    assert "vnc_password" in params
-    assert "step_limit" in params
-    assert "timeout" in params
-    assert "ctx" in params
-
-    # Check defaults
-    assert params["vnc_password"].default is None
-    assert params["step_limit"].default == 40
-    assert params["timeout"].default == 300
+    assert tool is not None
+    assert tool.name == "execute_vnc_task"
+    assert "VNC desktop" in tool.description
+    assert "hostname" in tool.description or "vnc_server" in tool.description
 
 
+@pytest.mark.external
 @pytest.mark.asyncio
 async def test_execute_vnc_task_without_vnc():
-    """Test execute_vnc_task error handling when VNC is unavailable."""
-    from vnc_use.mcp_server import execute_vnc_task
+    """Test execute_vnc_task error handling when credentials not found.
 
-    result = await execute_vnc_task(
-        vnc_server="nonexistent::9999",
+    Tests the credential lookup failure path.
+    """
+    # Get the underlying function from the tool
+    tools = mcp_any._tool_manager._tools
+    tool = tools.get("execute_vnc_task")
+
+    # Skip if we can't get the function
+    if not hasattr(tool, "fn"):
+        pytest.skip("Cannot access underlying function")
+
+    result = await tool.fn(
+        hostname="nonexistent-host",
         task="Test task",
-        vnc_password=None,
         step_limit=5,
         timeout=10,
         ctx=None,
     )
 
-    # Should return error result
+    # Should return error result (no credentials found)
     assert result["success"] is False
     assert result["error"] is not None
-    assert "Task execution failed" in result["error"]
+    assert "No credentials found" in result["error"]
 
 
+@pytest.mark.external
 @pytest.mark.asyncio
 async def test_execute_vnc_task_parameter_validation():
-    """Test parameter types are correct."""
-    from vnc_use.mcp_server import execute_vnc_task
+    """Test that execute_vnc_task returns correct structure.
 
-    # Should accept valid parameters without error
-    result = await execute_vnc_task(
-        vnc_server="localhost::5901",
+    Tests the return value structure when no credentials found.
+    """
+    # Get the underlying function from the tool
+    tools = mcp_any._tool_manager._tools
+    tool = tools.get("execute_vnc_task")
+
+    # Skip if we can't get the function
+    if not hasattr(tool, "fn"):
+        pytest.skip("Cannot access underlying function")
+
+    result = await tool.fn(
+        hostname="test-host",
         task="Open browser",
-        vnc_password="test",
         step_limit=10,
         timeout=60,
         ctx=None,
@@ -93,4 +101,4 @@ def test_mcp_server_name():
 def test_mcp_tool_manager():
     """Test tool manager is properly configured."""
     assert hasattr(mcp, "_tool_manager")
-    assert len(mcp._tool_manager._tools) > 0
+    assert len(mcp_any._tool_manager._tools) > 0

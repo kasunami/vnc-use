@@ -3,15 +3,15 @@
 import base64
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from pydantic import SecretStr
 
 from .base import BasePlanner
 from .gemini import compress_screenshot
 from .vnc_tools import get_vnc_tools
-
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ class AnthropicPlanner(BasePlanner):
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         self.llm = ChatAnthropic(
-            model=self.model,
-            api_key=api_key,
+            model_name=self.model,
+            anthropic_api_key=SecretStr(api_key),
             temperature=0.0,
         )
 
@@ -83,7 +83,7 @@ class AnthropicPlanner(BasePlanner):
         screenshot_b64 = base64.b64encode(compressed).decode("utf-8")
 
         # Build messages
-        messages = []
+        messages: list[BaseMessage] = []
 
         # System message with task context
         system_prompt = f"""You are controlling a computer via VNC (Virtual Network Computing).
@@ -123,14 +123,16 @@ Coordinates are normalized to a 0-999 grid. Convert screen positions proportiona
             },
         ]
 
-        messages.append(HumanMessage(content=user_content))
+        messages.append(HumanMessage(content=cast("list[str | dict[str, Any]]", user_content)))
 
         logger.debug(
             f"Calling Anthropic with screenshot ({len(screenshot_png)} -> {len(compressed)} bytes)"
         )
 
         # Invoke model with tools
-        response: AIMessage = self.llm_with_tools.invoke(messages)
+        response = self.llm_with_tools.invoke(messages)
+        if not isinstance(response, AIMessage):
+            raise TypeError(f"Expected AIMessage, got {type(response)}")
 
         logger.info(f"Received response with {len(response.tool_calls)} tool call(s)")
 

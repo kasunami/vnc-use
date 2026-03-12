@@ -11,6 +11,8 @@ class BasePlanner(ABC):
     to propose actions based on screenshots and task descriptions.
     """
 
+    excluded_actions: list[str]
+
     @abstractmethod
     def generate_stateless(
         self,

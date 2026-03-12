@@ -3,7 +3,7 @@
 import base64
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai.types import (
@@ -18,11 +18,13 @@ from google.genai.types import (
 
 from .base import BasePlanner
 
-
 logger = logging.getLogger(__name__)
 
 # Model ID for Gemini Computer Use
 MODEL_ID = "gemini-2.5-computer-use-preview-10-2025"
+
+# MIME type for screenshots
+PNG_MIME_TYPE = "image/png"
 
 
 def compress_screenshot(png_bytes: bytes, max_width: int = 512) -> bytes:
@@ -39,7 +41,7 @@ def compress_screenshot(png_bytes: bytes, max_width: int = 512) -> bytes:
 
     from PIL import Image
 
-    img = Image.open(io.BytesIO(png_bytes))
+    img: Image.Image = Image.open(io.BytesIO(png_bytes))
 
     # Resize if too large
     if img.width > max_width:
@@ -95,7 +97,7 @@ class GeminiPlanner(BasePlanner):
             Configuration for Gemini API request
         """
         computer_use = ComputerUse(
-            environment="ENVIRONMENT_BROWSER",
+            environment="ENVIRONMENT_BROWSER",  # type: ignore[arg-type]
             excluded_predefined_functions=self.excluded_actions,
         )
 
@@ -132,8 +134,8 @@ class GeminiPlanner(BasePlanner):
             png_b64 = base64.b64encode(compressed).decode("utf-8")
             parts.append(
                 Part(
-                    inline_data={
-                        "mime_type": "image/png",
+                    inline_data={  # type: ignore[arg-type]
+                        "mime_type": PNG_MIME_TYPE,
                         "data": png_b64,
                     }
                 )
@@ -161,43 +163,7 @@ class GeminiPlanner(BasePlanner):
 
         # Strip old screenshots from history to avoid token limits
         # Keep only the most recent screenshot in the last function response
-        cleaned_contents = []
-        for i, content in enumerate(contents):
-            if i == len(contents) - 1:
-                # Keep last item as-is (most recent screenshot)
-                cleaned_contents.append(content)
-            else:
-                # For older items, remove screenshot data from function responses
-                if hasattr(content, "parts") and content.parts:
-                    cleaned_parts = []
-                    for part in content.parts:
-                        if hasattr(part, "function_response") and part.function_response:
-                            # Keep function response but remove screenshot
-                            fr = part.function_response
-                            cleaned_response = {
-                                "url": fr.response.get("url", ""),
-                            }
-                            if "error" in fr.response:
-                                cleaned_response["error"] = fr.response["error"]
-
-                            from google.genai.types import FunctionResponse, Part
-
-                            cleaned_parts.append(
-                                Part(
-                                    function_response=FunctionResponse(
-                                        name=fr.name, response=cleaned_response
-                                    )
-                                )
-                            )
-                        else:
-                            # Keep other parts as-is (text, function_call, etc)
-                            cleaned_parts.append(part)
-
-                    from google.genai.types import Content
-
-                    cleaned_contents.append(Content(role=content.role, parts=cleaned_parts))
-                else:
-                    cleaned_contents.append(content)
+        cleaned_contents = self._clean_old_screenshots(contents)
 
         logger.info(
             f"Calling Gemini with {len(cleaned_contents)} content items (old screenshots removed)"
@@ -205,11 +171,72 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=cleaned_contents,
+            contents=cleaned_contents,  # type: ignore[arg-type]
             config=config,
         )
 
         return response
+
+    def _clean_old_screenshots(self, contents: list[Content]) -> list[Content]:
+        """Remove screenshots from older content items to reduce token count.
+
+        Keeps only the most recent screenshot in the last content item.
+
+        Args:
+            contents: List of Content objects
+
+        Returns:
+            Cleaned list with old screenshots removed
+        """
+        cleaned_contents = []
+        for i, content in enumerate(contents):
+            if i == len(contents) - 1:
+                # Keep last item as-is (most recent screenshot)
+                cleaned_contents.append(content)
+            else:
+                cleaned_contents.append(self._clean_content_screenshots(content))
+        return cleaned_contents
+
+    def _clean_content_screenshots(self, content: Content) -> Content:
+        """Remove screenshot data from a single Content object.
+
+        Args:
+            content: Content object to clean
+
+        Returns:
+            Content with screenshots removed from function responses
+        """
+        if not hasattr(content, "parts") or not content.parts:
+            return content
+
+        cleaned_parts = []
+        for part in content.parts:
+            cleaned_part = self._clean_part_screenshot(part)
+            cleaned_parts.append(cleaned_part)
+
+        return Content(role=content.role, parts=cleaned_parts)
+
+    def _clean_part_screenshot(self, part: Part) -> Part:
+        """Remove screenshot data from a single Part if it's a function response.
+
+        Args:
+            part: Part object to clean
+
+        Returns:
+            Cleaned Part (function responses without screenshot data)
+        """
+        if not hasattr(part, "function_response") or not part.function_response:
+            return part
+
+        fr = part.function_response
+        fr_resp = fr.response or {}
+
+        # Keep function response but remove screenshot
+        cleaned_response: dict[str, Any] = {"url": fr_resp.get("url", "")}
+        if "error" in fr_resp:
+            cleaned_response["error"] = fr_resp["error"]
+
+        return Part(function_response=FunctionResponse(name=fr.name, response=cleaned_response))
 
     def extract_text(self, response: Any) -> str:
         """Extract text observations/reasoning from Gemini response.
@@ -325,7 +352,7 @@ class GeminiPlanner(BasePlanner):
         response_data = {
             "url": url,
             "screenshot": {
-                "mime_type": "image/png",
+                "mime_type": PNG_MIME_TYPE,
                 "data": png_b64,
             },
         }
@@ -416,8 +443,8 @@ class GeminiPlanner(BasePlanner):
         parts = [
             Part(text=context_text),
             Part(
-                inline_data={
-                    "mime_type": "image/png",
+                inline_data={  # type: ignore[arg-type]
+                    "mime_type": PNG_MIME_TYPE,
                     "data": png_b64,
                 }
             ),
@@ -430,7 +457,7 @@ class GeminiPlanner(BasePlanner):
 
         response = self.client.models.generate_content(
             model=MODEL_ID,
-            contents=contents,
+            contents=cast("Any", contents),
             config=config,
         )
 

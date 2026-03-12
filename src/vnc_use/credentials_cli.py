@@ -56,6 +56,7 @@ def get_credentials(args: argparse.Namespace) -> int:
 
 def list_credentials(args: argparse.Namespace) -> int:
     """List all stored VNC server hostnames."""
+    _ = args  # unused but required by argparse interface
     store = get_default_store()
 
     hostnames = store.list_hosts()
@@ -63,8 +64,8 @@ def list_credentials(args: argparse.Namespace) -> int:
         print(f"Stored credentials for {len(hostnames)} host(s):")
         for hostname in hostnames:
             print(f"  - {hostname}")
-        return 0
-    print("No credentials stored")
+    else:
+        print("No credentials stored")
     return 0
 
 

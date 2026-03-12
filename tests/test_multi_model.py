@@ -4,6 +4,7 @@
 import os
 
 import pytest
+
 from vnc_use.agent import VncUseAgent
 from vnc_use.planners import AnthropicPlanner, GeminiPlanner
 from vnc_use.planners.base import BasePlanner

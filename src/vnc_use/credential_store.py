@@ -13,6 +13,13 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
+try:
+    from keyring.errors import PasswordDeleteError
+except ImportError:
+
+    class PasswordDeleteError(Exception):
+        """Fallback when keyring is not installed."""
+
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +119,7 @@ class NetrcStore(CredentialStore):
             n = netrc.netrc(self.file_path)
             auth = n.authenticators(hostname)
             if auth:
-                login, account, password = auth
+                login, _, password = auth  # account unused in VNC context
                 # For VNC, we store server address in login field
                 server = login if login else hostname
                 return VNCCredentials(server=server, password=password)
@@ -236,7 +243,7 @@ class KeyringStore(CredentialStore):
             self.keyring.delete_password(self.SERVICE_NAME, hostname)
             logger.info(f"Deleted credentials for {hostname} from keyring")
             return True
-        except self.keyring.errors.PasswordDeleteError:
+        except PasswordDeleteError:
             return False
         except Exception as e:
             logger.error(f"Failed to delete credentials from keyring: {e}")
@@ -345,17 +352,46 @@ class ChainedStore(CredentialStore):
         return sorted(all_hosts)
 
 
-def get_default_store() -> CredentialStore:
-    """Get default credential store with fallback chain.
+def get_default_store(store_type: str | None = None) -> CredentialStore:
+    """Get credential store based on configuration.
 
-    Tries stores in this order:
-    1. KeyringStore (OS-encrypted, secure) - if keyring available
-    2. NetrcStore (standard Unix format) - if file exists
-    3. EnvironmentStore (fallback for testing)
+    Args:
+        store_type: Override store type. If None, uses VNC_CREDENTIAL_STORE env var.
+                   Options: "postgres", "keyring", "netrc", "env", "chain" (default)
+
+    Environment Variables:
+        VNC_CREDENTIAL_STORE: Store type to use (postgres, keyring, netrc, env, chain)
+        DATABASE_URL: Required for postgres store
+        VNC_ENCRYPTION_KEY: Optional encryption key for postgres store
 
     Returns:
-        ChainedStore with available backends
+        Configured CredentialStore instance
     """
+    store_type = store_type or os.getenv("VNC_CREDENTIAL_STORE", "chain").lower()
+
+    if store_type == "postgres":
+        try:
+            from .credential_store_postgres import PostgreSQLCredentialStore
+
+            logger.info("Using PostgreSQLCredentialStore")
+            return PostgreSQLCredentialStore()
+        except ImportError as e:
+            logger.error(f"PostgreSQL store not available: {e}")
+            raise
+
+    if store_type == "keyring":
+        logger.info("Using KeyringStore")
+        return KeyringStore()
+
+    if store_type == "netrc":
+        logger.info("Using NetrcStore")
+        return NetrcStore()
+
+    if store_type == "env":
+        logger.info("Using EnvironmentStore")
+        return EnvironmentStore()
+
+    # Default: chained store with fallback
     stores: list[CredentialStore] = []
 
     # Try KeyringStore first (most secure)

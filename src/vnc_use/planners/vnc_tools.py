@@ -9,26 +9,29 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# Constants for field descriptions
+COORD_RANGE = "(0-999 normalized)"
+
 
 class ClickAtTool(BaseModel):
     """Click at specified coordinates on the screen."""
 
-    x: int = Field(description="X coordinate (0-999 normalized)")
-    y: int = Field(description="Y coordinate (0-999 normalized)")
+    x: int = Field(description=f"X coordinate {COORD_RANGE}")
+    y: int = Field(description=f"Y coordinate {COORD_RANGE}")
 
 
 class DoubleClickAtTool(BaseModel):
     """Double-click at specified coordinates on the screen."""
 
-    x: int = Field(description="X coordinate (0-999 normalized)")
-    y: int = Field(description="Y coordinate (0-999 normalized)")
+    x: int = Field(description=f"X coordinate {COORD_RANGE}")
+    y: int = Field(description=f"Y coordinate {COORD_RANGE}")
 
 
 class HoverAtTool(BaseModel):
     """Move mouse cursor to hover at specified coordinates."""
 
-    x: int = Field(description="X coordinate (0-999 normalized)")
-    y: int = Field(description="Y coordinate (0-999 normalized)")
+    x: int = Field(description=f"X coordinate {COORD_RANGE}")
+    y: int = Field(description=f"Y coordinate {COORD_RANGE}")
 
 
 class TypeTextAtTool(BaseModel):
@@ -37,8 +40,8 @@ class TypeTextAtTool(BaseModel):
     Clicks at the coordinates first, then types the text.
     """
 
-    x: int = Field(description="X coordinate to click before typing (0-999 normalized)")
-    y: int = Field(description="Y coordinate to click before typing (0-999 normalized)")
+    x: int = Field(description=f"X coordinate to click before typing {COORD_RANGE}")
+    y: int = Field(description=f"Y coordinate to click before typing {COORD_RANGE}")
     text: str = Field(description="Text to type")
     press_enter: bool = Field(default=False, description="Whether to press Enter after typing")
     clear_before_typing: bool = Field(
@@ -75,8 +78,8 @@ class ScrollAtTool(BaseModel):
     Useful for scrolling within a specific window or panel.
     """
 
-    x: int = Field(description="X coordinate to scroll at (0-999 normalized)")
-    y: int = Field(description="Y coordinate to scroll at (0-999 normalized)")
+    x: int = Field(description=f"X coordinate to scroll at {COORD_RANGE}")
+    y: int = Field(description=f"Y coordinate to scroll at {COORD_RANGE}")
     direction: Literal["up", "down", "left", "right"] = Field(description="Direction to scroll")
     magnitude: int = Field(
         default=800,
@@ -90,10 +93,10 @@ class DragAndDropTool(BaseModel):
     Performs a mouse drag operation from start to end coordinates.
     """
 
-    x: int = Field(description="Starting X coordinate (0-999 normalized)")
-    y: int = Field(description="Starting Y coordinate (0-999 normalized)")
-    destination_x: int = Field(description="Ending X coordinate (0-999 normalized)")
-    destination_y: int = Field(description="Ending Y coordinate (0-999 normalized)")
+    x: int = Field(description=f"Starting X coordinate {COORD_RANGE}")
+    y: int = Field(description=f"Starting Y coordinate {COORD_RANGE}")
+    destination_x: int = Field(description=f"Ending X coordinate {COORD_RANGE}")
+    destination_y: int = Field(description=f"Ending Y coordinate {COORD_RANGE}")
 
 
 class Wait5SecondsTool(BaseModel):
@@ -103,9 +106,8 @@ class Wait5SecondsTool(BaseModel):
     """
 
 
-
 # Tool name to Pydantic model mapping
-VNC_TOOL_SCHEMAS = {
+VNC_TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
     "click_at": ClickAtTool,
     "double_click_at": DoubleClickAtTool,
     "hover_at": HoverAtTool,

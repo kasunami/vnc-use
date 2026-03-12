@@ -3,8 +3,8 @@
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
@@ -14,8 +14,13 @@ from .logging_utils import RunLogger
 from .safety import HITLGate, requires_confirmation, should_block
 from .types import CUAState
 
+if TYPE_CHECKING:
+    from .planners.base import BasePlanner
 
 logger = logging.getLogger(__name__)
+
+# Constants for error messages
+USER_DENIED_ACTION = "User denied action"
 
 
 class VncUseAgent:
@@ -33,7 +38,7 @@ class VncUseAgent:
         step_limit: int = 40,
         seconds_timeout: int = 300,
         hitl_mode: bool = True,
-        hitl_callback: Callable[[dict, list], Awaitable[bool]] | None = None,
+        hitl_callback: Callable[[dict, list], Coroutine[Any, Any, bool]] | None = None,
         api_key: str | None = None,
         model_provider: str = "gemini",
     ) -> None:
@@ -54,7 +59,10 @@ class VncUseAgent:
                 Called with (safety_decision, pending_calls) and should return bool.
                 If not provided, uses LangGraph interrupt mechanism.
             api_key: API key for the model provider (GOOGLE_API_KEY or ANTHROPIC_API_KEY env)
-            model_provider: LLM provider to use ("gemini" or "anthropic", defaults to "gemini")
+            model_provider: LLM provider to use:
+                - "gemini": Google Gemini with function calling (default)
+                - "anthropic": Anthropic Claude with function calling
+                - "native": Anthropic's native computer_20250124 tool (recommended for best accuracy)
         """
         self.vnc_server = vnc_server
         self.vnc_password = vnc_password
@@ -75,7 +83,11 @@ class VncUseAgent:
             ]
 
         # Initialize components
-        self.vnc = VNCController()
+        # For native Anthropic API, pass screen dimensions for coordinate scaling
+        if model_provider.lower() == "native":
+            self.vnc = VNCController(coord_max=screen_size[0])
+        else:
+            self.vnc = VNCController()
 
         # Initialize planner based on provider
         if model_provider.lower() == "gemini":
@@ -88,14 +100,23 @@ class VncUseAgent:
         elif model_provider.lower() == "anthropic":
             from .planners import AnthropicPlanner
 
-            self.planner: BasePlanner = AnthropicPlanner(
+            self.planner = AnthropicPlanner(
                 excluded_actions=excluded_actions,
                 api_key=api_key,
+            )
+        elif model_provider.lower() == "native":
+            from .planners import NativeComputerPlanner
+
+            self.planner = NativeComputerPlanner(
+                excluded_actions=excluded_actions,
+                api_key=api_key,
+                display_width=screen_size[0],
+                display_height=screen_size[1],
             )
         else:
             raise ValueError(
                 f"Unknown model_provider: {model_provider}. "
-                "Supported providers: 'gemini', 'anthropic'"
+                "Supported providers: 'gemini', 'anthropic', 'native'"
             )
 
         self.hitl_gate = HITLGate()
@@ -104,13 +125,13 @@ class VncUseAgent:
         # Build graph
         self.graph = self._build_graph()
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> Any:
         """Build LangGraph state machine.
 
         Returns:
-            Compiled graph
+            Compiled graph (CompiledStateGraph)
         """
-        builder = StateGraph(CUAState)
+        builder = StateGraph(CUAState)  # ty: ignore[invalid-argument-type]
 
         # Add nodes
         builder.add_node("propose", self._propose_node)
@@ -191,7 +212,7 @@ class VncUseAgent:
                 }
 
             # Check for blocking safety decision
-            if should_block(safety_decision):
+            if safety_decision and should_block(safety_decision):
                 reason = safety_decision.get("reason", "Unknown")
                 logger.warning(f"Action blocked by safety: {reason}")
                 return {
@@ -267,10 +288,12 @@ class VncUseAgent:
             # Create step log
             from .types import StepLog
 
+            observation_text = cast("str", state.get("observation", "") or "")
+            proposed = cast("list[dict[str, Any]]", state.get("proposed_actions", []) or [])
             step_log: StepLog = {
                 "step_number": step_number,
-                "observation": state.get("observation", ""),
-                "proposed_actions": state.get("proposed_actions", []),
+                "observation": observation_text,
+                "proposed_actions": proposed,
                 "executed_action": {"name": function_name, "args": args},
                 "result": result_text,
                 "screenshot_path": screenshot_path,
@@ -291,7 +314,7 @@ class VncUseAgent:
             # Still try to get screenshot for error reporting
             try:
                 screenshot = self.vnc.screenshot_png()
-            except:
+            except Exception:
                 screenshot = b""
 
             action_text += f" - Exception: {e!s}"
@@ -307,19 +330,19 @@ class VncUseAgent:
                 screenshot_path = str(path.name)
 
             # Create step log for error
-            from .types import StepLog
-
-            step_log: StepLog = {
+            err_observation = cast("str", state.get("observation", "") or "")
+            err_proposed = cast("list[dict[str, Any]]", state.get("proposed_actions", []) or [])
+            error_step_log: StepLog = {
                 "step_number": step_number,
-                "observation": state.get("observation", ""),
-                "proposed_actions": state.get("proposed_actions", []),
+                "observation": err_observation,
+                "proposed_actions": err_proposed,
                 "executed_action": {"name": function_name, "args": args},
                 "result": result_text,
                 "screenshot_path": screenshot_path,
                 "timestamp": time.time(),
             }
 
-            updated_step_logs = state.get("step_logs", []) + [step_log]
+            updated_step_logs = state.get("step_logs", []) + [error_step_log]
 
             return {
                 "pending_calls": remaining,
@@ -343,19 +366,20 @@ class VncUseAgent:
         safety = state["safety"]
         pending = state["pending_calls"]
 
-        # Log the confirmation request
-        self.hitl_gate.request_confirmation(safety, pending)
+        # Log the confirmation request (safety might be None)
+        if safety is not None:
+            self.hitl_gate.request_confirmation(safety, pending)
 
         # Use callback if provided, otherwise use LangGraph interrupt
         if self.hitl_callback:
             logger.debug("Using HITL callback for user decision")
             try:
                 # Call async callback from sync context
-                approved = asyncio.run(self.hitl_callback(safety, pending))
+                approved: bool = asyncio.run(self.hitl_callback(safety or {}, pending))
 
                 if not approved:
-                    logger.warning("User denied action via callback")
-                    return {"done": True, "error": "User denied action"}
+                    logger.warning(f"{USER_DENIED_ACTION} via callback")
+                    return {"done": True, "error": USER_DENIED_ACTION}
 
                 logger.info("User approved action via callback")
                 return {}
@@ -375,8 +399,8 @@ class VncUseAgent:
 
             # Process user decision
             if decision == "deny":
-                logger.warning("User denied action")
-                return {"done": True, "error": "User denied action"}
+                logger.warning(USER_DENIED_ACTION)
+                return {"done": True, "error": USER_DENIED_ACTION}
 
             logger.info("User approved action")
             return {}
@@ -414,12 +438,12 @@ class VncUseAgent:
 
         return "act"
 
-    def run(self, task: str, thread_id: str | None = None) -> dict[str, Any]:
+    def run(self, task: str, _thread_id: str | None = None) -> dict[str, Any]:
         """Run the agent on a task.
 
         Args:
             task: User's task description
-            thread_id: Optional thread ID for resumable runs
+            _thread_id: Optional thread ID for resumable runs (reserved for future use)
 
         Returns:
             Final state and run artifacts
@@ -451,6 +475,7 @@ class VncUseAgent:
                 "step_logs": [],
                 "pending_calls": [],
                 "last_screenshot_png": initial_screenshot,
+                "last_observation": "",
                 "step": 0,
                 "done": False,
                 "safety": None,
