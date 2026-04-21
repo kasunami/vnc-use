@@ -63,6 +63,7 @@ class VncUseAgent:
                 - "gemini": Google Gemini with function calling (default)
                 - "anthropic": Anthropic Claude with function calling
                 - "native": Anthropic's native computer_20250124 tool (recommended for best accuracy)
+                - "openai_compatible": OpenAI-compatible endpoint (e.g., Mesh Router) returning JSON actions
         """
         self.vnc_server = vnc_server
         self.vnc_password = vnc_password
@@ -82,10 +83,11 @@ class VncUseAgent:
                 "search",  # Requires browser search API
             ]
 
-        # Initialize components
-        # For native Anthropic API, pass screen dimensions for coordinate scaling
+        # Initialize VNC controller.
+        # Most planners use normalized 0-999 coordinates (coord_max=1000 defaults).
+        # Anthropic's native computer-use commonly operates in a 1024x768 coordinate space.
         if model_provider.lower() == "native":
-            self.vnc = VNCController(coord_max=screen_size[0])
+            self.vnc = VNCController(coord_max_x=1024, coord_max_y=768)
         else:
             self.vnc = VNCController()
 
@@ -113,10 +115,17 @@ class VncUseAgent:
                 display_width=screen_size[0],
                 display_height=screen_size[1],
             )
+        elif model_provider.lower() in {"openai_compatible", "openai-compatible", "local"}:
+            from .planners import OpenAICompatiblePlanner
+
+            self.planner = OpenAICompatiblePlanner(
+                excluded_actions=excluded_actions,
+                api_key=api_key,
+            )
         else:
             raise ValueError(
                 f"Unknown model_provider: {model_provider}. "
-                "Supported providers: 'gemini', 'anthropic', 'native'"
+                "Supported providers: 'gemini', 'anthropic', 'native', 'openai_compatible'"
             )
 
         self.hitl_gate = HITLGate()
@@ -499,8 +508,11 @@ class VncUseAgent:
 
             logger.info(f"Task completed. Run artifacts: {run_logger.get_run_dir()}")
 
+            done = bool(final_state.get("done", False) if final_state else False)
+            error = final_state.get("error") if isinstance(final_state, dict) else None
             return {
-                "success": final_state.get("done", False) if final_state else False,
+                "success": bool(done and not error),
+                "error": str(error) if error else None,
                 "final_state": final_state,
                 "run_id": run_logger.get_run_id(),
                 "run_dir": str(run_logger.get_run_dir()),

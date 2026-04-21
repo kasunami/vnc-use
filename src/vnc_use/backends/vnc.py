@@ -83,6 +83,16 @@ def denorm_y(y: int, height: int, max_coord: int = 1000) -> int:
     return round(y * height / max_coord)
 
 
+def norm_x(px: int, width: int, max_coord: int = 1000) -> int:
+    """Convert pixel x coordinate to model coordinate space."""
+    return round(px * max_coord / width)
+
+
+def norm_y(py: int, height: int, max_coord: int = 1000) -> int:
+    """Convert pixel y coordinate to model coordinate space."""
+    return round(py * max_coord / height)
+
+
 class VNCController:
     """Controller for VNC desktop interactions.
 
@@ -91,26 +101,41 @@ class VNCController:
     pixels based on current screen size.
     """
 
-    def __init__(self, coord_max: int | None = None, vnc_host: str = "vnc-desktop") -> None:
+    def __init__(
+        self,
+        coord_max: int | None = None,
+        coord_max_x: int | None = None,
+        coord_max_y: int | None = None,
+        vnc_host: str = "vnc-desktop",
+    ) -> None:
         """Initialize VNC controller (not yet connected).
 
         Args:
-            coord_max: Maximum coordinate value for denormalization
-                       - 1000: For 0-999 normalized coords (Gemini)
-                       - 512: For compressed screenshot width (Claude with 512px screenshots)
-                       - None: Auto-detect from VNC_COORD_MAX env var (default 512)
+            coord_max: Back-compat alias for coord_max_x (and coord_max_y if not provided).
+            coord_max_x: Maximum x coordinate value for denormalization.
+                - 1000: For 0-999 normalized coordinates (recommended)
+                - 1024: For Claude "computer use" coordinate space (common)
+                - screen width: If your model returns absolute pixel coordinates
+            coord_max_y: Maximum y coordinate value for denormalization (same conventions as coord_max_x).
         """
         self.client: Any = None
         self._screen_size: tuple[int, int] | None = None
         self.vnc_host = vnc_host
 
-        # Configure coordinate normalization
-        # Default to 1024 (XGA width) to match Anthropic's Computer Use demo
-        # which scales screenshots to 1024x768 for optimal Claude vision accuracy
+        # Back-compat: coord_max maps to x/y when explicit values not provided.
+        if coord_max_x is None:
+            coord_max_x = coord_max
+        if coord_max_y is None:
+            coord_max_y = coord_max
 
-        if coord_max is None:
-            coord_max = int(os.getenv("VNC_COORD_MAX", "1024"))
-        self.coord_max = coord_max
+        # Default to 1000 (0-999 normalized coords) unless overridden via env vars.
+        if coord_max_x is None:
+            coord_max_x = int(os.getenv("VNC_COORD_MAX_X") or os.getenv("VNC_COORD_MAX") or "1000")
+        if coord_max_y is None:
+            coord_max_y = int(os.getenv("VNC_COORD_MAX_Y") or os.getenv("VNC_COORD_MAX") or "1000")
+
+        self.coord_max_x = coord_max_x
+        self.coord_max_y = coord_max_y
 
     def connect(self, server: str, password: str | None = None) -> "VNCController":
         """Connect to VNC server.
@@ -137,6 +162,12 @@ class VNCController:
             if callable(disconnect):
                 disconnect()
             self.client = None
+            # vncdotool uses a background Twisted reactor thread. Ensure it is
+            # stopped so CLI runs return to the shell prompt.
+            try:
+                vnc_api.shutdown()
+            except Exception:
+                pass
             logger.info("VNC connection closed")
 
     def screenshot_png(self) -> bytes:
@@ -452,32 +483,32 @@ class VNCController:
 
     def _action_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle click_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.click(px, py)
 
     def _action_double_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle double_click_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.double_click(px, py)
 
     def _action_right_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle right_click_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.click(px, py, button=3)
 
     def _action_triple_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle triple_click_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.triple_click(px, py)
 
     def _action_middle_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle middle_click_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.middle_click(px, py)
 
     def _action_left_mouse_down(self, args: dict, width: int, height: int) -> None:
@@ -490,14 +521,14 @@ class VNCController:
 
     def _action_hover_at(self, args: dict, width: int, height: int) -> None:
         """Handle hover_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.move(px, py)
 
     def _action_type_text_at(self, args: dict, width: int, height: int) -> None:
         """Handle type_text_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.click(px, py)  # Focus first
         self.type_text(
             args["text"],
@@ -527,8 +558,8 @@ class VNCController:
 
     def _action_scroll_at(self, args: dict, width: int, height: int) -> None:
         """Handle scroll_at action."""
-        px = denorm_x(args["x"], width, width)
-        py = denorm_y(args["y"], height, height)
+        px = denorm_x(int(args["x"]), width, self.coord_max_x)
+        py = denorm_y(int(args["y"]), height, self.coord_max_y)
         self.move(px, py)
         self.scroll(args["direction"], args.get("magnitude", 800))
 
@@ -553,10 +584,10 @@ class VNCController:
                 "and end coordinates (end_x/destination_x, end_y/destination_y)"
             )
 
-        x0 = denorm_x(int(start_x), width, width)
-        y0 = denorm_y(int(start_y), height, height)
-        x1 = denorm_x(int(end_x), width, width)
-        y1 = denorm_y(int(end_y), height, height)
+        y0 = denorm_y(int(start_y), height, self.coord_max_y)
+        x0 = denorm_x(int(start_x), width, self.coord_max_x)
+        x1 = denorm_x(int(end_x), width, self.coord_max_x)
+        y1 = denorm_y(int(end_y), height, self.coord_max_y)
         self.drag_and_drop(x0, y0, x1, y1)
 
     def _action_wait_5_seconds(self, args: dict, width: int, height: int) -> None:
@@ -605,8 +636,8 @@ class VNCController:
             # Special case: cursor_position returns early with output
             if action_name == "cursor_position":
                 cursor_x, cursor_y = self.get_cursor_position()
-                api_x = denorm_x(cursor_x, width, width)
-                api_y = denorm_y(cursor_y, height, height)
+                api_x = norm_x(cursor_x, width, self.coord_max_x)
+                api_y = norm_y(cursor_y, height, self.coord_max_y)
                 screenshot = self.screenshot_png()
                 return ActionResult(
                     success=True,

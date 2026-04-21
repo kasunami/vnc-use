@@ -5,6 +5,7 @@ import logging
 import sys
 
 from .agent import VncUseAgent
+from .credential_store import get_default_store
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -74,7 +75,7 @@ Examples:
     )
     parser.add_argument(
         "--model-provider",
-        choices=["gemini", "anthropic"],
+        choices=["gemini", "anthropic", "native", "openai_compatible", "local"],
         help="LLM provider to use (default: from MODEL_PROVIDER env or 'gemini')",
     )
     parser.add_argument(
@@ -102,10 +103,38 @@ Examples:
             model_provider = args.model_provider or os.getenv("MODEL_PROVIDER", "gemini")
             logger.info(f"Using model provider: {model_provider}")
 
+            vnc_server = str(args.vnc or "").strip()
+            vnc_password = args.password
+
+            def _host_key_from_vnc(vnc: str) -> str:
+                raw = vnc.strip()
+                if not raw:
+                    return ""
+                if "::" in raw:
+                    return raw.split("::", 1)[0].strip()
+                if ":" in raw and raw.count(":") == 1:
+                    return raw.split(":", 1)[0].strip()
+                return raw
+
+            # If password isn't provided, attempt to resolve it from the credential store.
+            # This lets users run:
+            #   vnc-use-credentials set live-desktop --server localhost::5901
+            #   vnc-use run --vnc live-desktop --task "..."
+            if not vnc_password:
+                store = get_default_store()
+                host_key = _host_key_from_vnc(vnc_server)
+                if host_key:
+                    creds = store.get(host_key)
+                    if creds and creds.password:
+                        if creds.server:
+                            vnc_server = creds.server
+                        vnc_password = creds.password
+                        logger.info(f"Resolved VNC credentials for hostname={host_key!r} (server={vnc_server!r})")
+
             # Initialize agent
             agent = VncUseAgent(
-                vnc_server=args.vnc,
-                vnc_password=args.password,
+                vnc_server=vnc_server,
+                vnc_password=vnc_password,
                 step_limit=args.step_limit,
                 seconds_timeout=args.timeout,
                 hitl_mode=not args.no_hitl,
@@ -115,18 +144,28 @@ Examples:
 
             # Run task
             result = agent.run(args.task)
+            final_state = result.get("final_state") if isinstance(result, dict) else None
+            observation = ""
+            if isinstance(final_state, dict):
+                observation = str(final_state.get("observation") or "")
 
             # Display results
             if result.get("success"):
                 logger.info("✓ Task completed successfully!")
                 print("\n✓ Task completed!")
+                if observation:
+                    print("\nObservation:")
+                    print(observation)
                 print(f"Run ID: {result.get('run_id')}")
                 print(f"Artifacts: {result.get('run_dir')}")
                 sys.exit(0)
             else:
-                error = result.get("error", "Unknown error")
+                error = result.get("error") or "Unknown error"
                 logger.error(f"✗ Task failed: {error}")
                 print(f"\n✗ Task failed: {error}")
+                if observation:
+                    print("\nObservation (last):")
+                    print(observation)
                 if result.get("run_dir"):
                     print(f"Run artifacts: {result.get('run_dir')}")
                 sys.exit(1)

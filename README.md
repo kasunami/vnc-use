@@ -43,6 +43,7 @@ vnc-use supports multiple LLM providers through a pluggable architecture:
 |----------|-------|----------|-------|------|
 | **Gemini** | `gemini-2.5-computer-use-preview-10-2025` | Complex tasks, multi-step workflows | Medium | Medium |
 | **Anthropic** | `claude-haiku-4-5-20251015` | Fast responses, cost optimization | Fast | Low |
+| **OpenAI-compatible (Local)** | `OPENAI_MODEL` | Local/airgapped workflows via `/v1/chat/completions` | Varies | $0 (local) |
 
 **Select via environment variable:**
 ```bash
@@ -53,12 +54,19 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # Use Gemini 2.5 Computer Use (default)
 export MODEL_PROVIDER=gemini
 export GOOGLE_API_KEY=...
+
+# Use a local / OpenAI-compatible endpoint (e.g., Mesh Router)
+export MODEL_PROVIDER=openai_compatible
+export OPENAI_BASE_URL=http://10.0.1.47:4010/v1
+export OPENAI_MODEL=your_vision_model_name_here
+export OPENAI_API_KEY=optional_if_required
 ```
 
 **Or via CLI flag:**
 ```bash
 vnc-use run --model-provider anthropic --task "..."
 vnc-use run --model-provider gemini --task "..."
+vnc-use run --model-provider openai_compatible --task "..."
 ```
 
 Both models use the same VNC backend, HITL safety, and action execution infrastructure.
@@ -92,6 +100,9 @@ pip install -e ".[keyring]"
 - Optional: `keyring` package for OS-encrypted credential storage
 
 ## Quick Start
+
+Want to control your **live** Ubuntu desktop on **X11** instead of the Docker test desktop?
+See `LIVE_DESKTOP_X11.md`.
 
 ### 1. Configure Environment Variables
 
