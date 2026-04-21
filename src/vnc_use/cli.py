@@ -147,7 +147,7 @@ Examples:
             final_state = result.get("final_state") if isinstance(result, dict) else None
             observation = ""
             if isinstance(final_state, dict):
-                observation = str(final_state.get("observation") or "")
+                observation = str(final_state.get("last_observation") or "")
 
             # Display results
             if result.get("success"):

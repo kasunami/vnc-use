@@ -546,7 +546,10 @@ class VNCController:
 
     def _action_key_combination(self, args: dict, width: int, height: int) -> None:
         """Handle key_combination action."""
-        self.key_combo(args["keys"])
+        keys = args.get("keys")
+        if isinstance(keys, list):
+            keys = "+".join(str(k).strip() for k in keys if str(k).strip())
+        self.key_combo(str(keys or ""))
 
     def _action_hold_key(self, args: dict, width: int, height: int) -> None:
         """Handle hold_key action."""

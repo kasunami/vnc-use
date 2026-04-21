@@ -197,6 +197,11 @@ class VncUseAgent:
                 action_history=state["action_history"],
                 screenshot_png=screenshot_png,
             )
+            if getattr(self, "run_logger", None) is not None:
+                try:
+                    self.run_logger.log_response(step, response)  # type: ignore[union-attr]
+                except Exception:
+                    pass
 
             # Extract text observation/reasoning
             observation = self.planner.extract_text(response)
@@ -217,7 +222,7 @@ class VncUseAgent:
                     "done": True,
                     "pending_calls": [],
                     "safety": safety_decision,
-                    "observation": observation,
+                    "last_observation": observation,
                 }
 
             # Check for blocking safety decision
@@ -228,14 +233,14 @@ class VncUseAgent:
                     "done": True,
                     "error": f"Blocked by safety: {reason}",
                     "safety": safety_decision,
-                    "observation": observation,
+                    "last_observation": observation,
                 }
 
             return {
                 "pending_calls": function_calls,
                 "safety": safety_decision,
                 "step": step + 1,
-                "observation": observation,
+                "last_observation": observation,
                 "proposed_actions": function_calls,
             }
 

@@ -80,8 +80,22 @@ class OpenAICompatiblePlanner(BasePlanner):
             "model": self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": 700,
+            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS") or "700"),
         }
+
+        # Optional Mesh-Router pinning hints (non-OpenAI fields accepted by MR).
+        pin_worker = os.getenv("MESH_PIN_WORKER") or os.getenv("OPENAI_PIN_WORKER")
+        pin_base_url = os.getenv("MESH_PIN_BASE_URL") or os.getenv("OPENAI_PIN_BASE_URL")
+        pin_lane_type = os.getenv("MESH_PIN_LANE_TYPE") or os.getenv("OPENAI_PIN_LANE_TYPE")
+        pin_lane_id = os.getenv("MESH_PIN_LANE_ID") or os.getenv("OPENAI_PIN_LANE_ID")
+        if pin_worker:
+            payload["mesh_pin_worker"] = str(pin_worker)
+        if pin_base_url:
+            payload["mesh_pin_base_url"] = str(pin_base_url)
+        if pin_lane_type:
+            payload["mesh_pin_lane_type"] = str(pin_lane_type)
+        if pin_lane_id:
+            payload["mesh_pin_lane_id"] = str(pin_lane_id)
 
         # Some OpenAI-compatible servers support strict JSON mode.
         if os.getenv("OPENAI_RESPONSE_FORMAT", "").lower() in {"json", "json_object"}:
@@ -127,6 +141,8 @@ class OpenAICompatiblePlanner(BasePlanner):
             '  "done": boolean,\n'
             '  "actions": [ {"name": string, "args": object} ]\n'
             "}\n\n"
+            "Your response MUST start with '{' and end with '}'.\n"
+            "Do not include any other text, markdown, code fences, or explanations.\n"
             "Rules:\n"
             f"- Allowed action names: {allowed}\n"
             f"- Excluded actions: {excluded}\n"
@@ -153,11 +169,12 @@ class OpenAICompatiblePlanner(BasePlanner):
         ]
 
         raw = self._chat_completions(messages)
-        content = (
-            raw.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        )
+        message = (raw.get("choices", [{}])[0].get("message", {}) or {}) if isinstance(raw, dict) else {}
+        content = message.get("content", "")
+        # Some OpenAI-compatible llama.cpp servers emit "reasoning_content" separately (Qwen thinking-style).
+        # Fall back so we can still extract JSON action plans.
+        if (content is None or content == "") and isinstance(message.get("reasoning_content"), str):
+            content = message.get("reasoning_content") or ""
 
         # Some servers return content blocks; normalize to string.
         if isinstance(content, list):
@@ -214,4 +231,3 @@ class OpenAICompatiblePlanner(BasePlanner):
         # No provider-side safety signals in the generic OpenAI-compatible path.
         _ = response
         return None
-

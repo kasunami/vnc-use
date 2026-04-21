@@ -56,7 +56,9 @@ class KeyCombinationTool(BaseModel):
     Examples: 'control+c', 'control+v', 'alt+tab', 'control+shift+t'
     """
 
-    keys: str = Field(description="Key combination string (e.g., 'control+c', 'alt+f4')")
+    keys: str | list[str] = Field(
+        description="Key combination string (e.g., 'control+c', 'alt+f4') or list of key names (e.g., ['super','f'])"
+    )
 
 
 class ScrollDocumentTool(BaseModel):
