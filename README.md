@@ -57,7 +57,7 @@ export GOOGLE_API_KEY=...
 
 # Use a local / OpenAI-compatible endpoint (e.g., Mesh Router)
 export MODEL_PROVIDER=openai_compatible
-export OPENAI_BASE_URL=http://10.0.1.47:4010/v1
+export OPENAI_BASE_URL=http://localhost:4010/v1
 export OPENAI_MODEL=your_vision_model_name_here
 export OPENAI_API_KEY=optional_if_required
 ```

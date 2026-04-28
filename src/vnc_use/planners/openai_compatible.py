@@ -24,11 +24,12 @@ from .vnc_tools import get_vnc_tools
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "http://10.0.1.47:4010/v1"
+DEFAULT_BASE_URL = "http://localhost:4010/v1"
 
 
 def _first_json_object(text: str) -> dict[str, Any]:
     """Extract the first JSON object from a string."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
     # Prefer fenced blocks
     fenced = re.search(r"```(?:json)?\s*({.*?})\s*```", text, flags=re.DOTALL)
     if fenced:
@@ -80,7 +81,7 @@ class OpenAICompatiblePlanner(BasePlanner):
             "model": self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS") or "700"),
+            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS") or "300"),
         }
 
         # Optional Mesh-Router pinning hints (non-OpenAI fields accepted by MR).
@@ -119,7 +120,8 @@ class OpenAICompatiblePlanner(BasePlanner):
         return json.loads(body)
 
     def generate_stateless(self, task: str, action_history: list[str], screenshot_png: bytes) -> Any:
-        compressed = compress_screenshot(screenshot_png, max_width=768)
+        screenshot_max_width = int(os.getenv("OPENAI_SCREENSHOT_MAX_WIDTH") or "512")
+        compressed = compress_screenshot(screenshot_png, max_width=screenshot_max_width)
         screenshot_b64 = base64.b64encode(compressed).decode("utf-8")
 
         allowed = ", ".join(sorted(self._allowed_tools))
@@ -133,7 +135,8 @@ class OpenAICompatiblePlanner(BasePlanner):
 
         system = (
             "You are controlling a computer via VNC. You will receive a screenshot of the desktop.\n"
-            "Your job is to propose the next UI action(s) to accomplish the task.\n\n"
+            "Your job is to propose the next UI action(s) to accomplish the task.\n"
+            "Be terse. Do not reason out loud. /no_think\n\n"
             f"Task: {task}\n\n"
             "Return ONLY a JSON object with this schema:\n"
             "{\n"
@@ -143,11 +146,14 @@ class OpenAICompatiblePlanner(BasePlanner):
             "}\n\n"
             "Your response MUST start with '{' and end with '}'.\n"
             "Do not include any other text, markdown, code fences, or explanations.\n"
+            "Do not include <think> blocks.\n"
             "Rules:\n"
             f"- Allowed action names: {allowed}\n"
             f"- Excluded actions: {excluded}\n"
+            "- For browser tasks, prefer open_web_browser then navigate instead of clicking desktop icons.\n"
             "- Coordinates x/y must be integers in the normalized range 0-999 (top-left is 0,0).\n"
             "- Prefer 1-2 actions per step. If the task is complete, set done=true and actions=[].\n"
+            "- For read-only inspection tasks, describe the screenshot, set done=true, and actions=[].\n"
             "- Do not include any keys other than observation/done/actions.\n"
             f"{history}"
         )

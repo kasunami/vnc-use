@@ -34,7 +34,7 @@ Notes:
 2) Use a local/OpenAI-compatible vision model via Mesh Router:
 
 - `export MODEL_PROVIDER=openai_compatible`
-- `export OPENAI_BASE_URL=http://10.0.1.47:4010/v1`
+- `export OPENAI_BASE_URL=http://localhost:4010/v1`
 - `export OPENAI_MODEL=<your_vision_model_name>`
 
 If your router requires auth:
@@ -52,4 +52,3 @@ Or via the MCP server:
 
 Even in “dangerous mode”, enabling HITL (`hitl_mode=True`) gives you a last-chance stop on obviously destructive
 actions (deletes, irreversible submissions, etc.).
-

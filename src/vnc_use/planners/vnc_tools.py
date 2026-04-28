@@ -108,8 +108,20 @@ class Wait5SecondsTool(BaseModel):
     """
 
 
+class OpenWebBrowserTool(BaseModel):
+    """Open the default Chromium/web browser through the desktop launcher."""
+
+
+class NavigateTool(BaseModel):
+    """Navigate the focused browser to a URL."""
+
+    url: str = Field(description="Absolute URL to open, including scheme such as https://")
+
+
 # Tool name to Pydantic model mapping
 VNC_TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
+    "open_web_browser": OpenWebBrowserTool,
+    "navigate": NavigateTool,
     "click_at": ClickAtTool,
     "double_click_at": DoubleClickAtTool,
     "hover_at": HoverAtTool,

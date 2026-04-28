@@ -76,8 +76,6 @@ class VncUseAgent:
         # Default exclusions for browser-specific actions we cannot implement via VNC
         if excluded_actions is None:
             excluded_actions = [
-                "open_web_browser",  # Cannot reliably implement via desktop clicking
-                "navigate",  # Requires browser URL bar API
                 "go_back",  # Requires browser history API
                 "go_forward",  # Requires browser history API
                 "search",  # Requires browser search API

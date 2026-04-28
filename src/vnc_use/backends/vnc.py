@@ -162,12 +162,16 @@ class VNCController:
             if callable(disconnect):
                 disconnect()
             self.client = None
-            # vncdotool uses a background Twisted reactor thread. Ensure it is
-            # stopped so CLI runs return to the shell prompt.
-            try:
-                vnc_api.shutdown()
-            except Exception:
-                pass
+            # Do not shut down vncdotool's global Twisted reactor by default.
+            # The reactor cannot be restarted in a long-running MCP server, so
+            # calling shutdown after one task breaks the next task with
+            # ReactorNotRestartable. CLI users that need explicit shutdown can
+            # opt in with VNC_SHUTDOWN_REACTOR_ON_DISCONNECT=1.
+            if os.getenv("VNC_SHUTDOWN_REACTOR_ON_DISCONNECT", "").lower() in {"1", "true", "yes"}:
+                try:
+                    vnc_api.shutdown()
+                except Exception:
+                    pass
             logger.info("VNC connection closed")
 
     def screenshot_png(self) -> bytes:
@@ -598,9 +602,30 @@ class VNCController:
         logger.info("Waiting 5 seconds...")
         time.sleep(5)
 
+    def _action_open_web_browser(self, args: dict, width: int, height: int) -> None:
+        """Open Chromium using the desktop run dialog instead of fragile icon coordinates."""
+        _ = args, width, height
+        self.key_combo("alt+f2")
+        time.sleep(0.5)
+        self.type_text(os.getenv("VNC_BROWSER_COMMAND", "chromium"), press_enter=True, clear_first=True)
+        time.sleep(3)
+
+    def _action_navigate(self, args: dict, width: int, height: int) -> None:
+        """Navigate the focused browser by using the address bar."""
+        _ = width, height
+        url = str(args.get("url") or "").strip()
+        if not url:
+            raise ValueError("navigate requires a non-empty url")
+        self.key_combo("ctrl+l")
+        time.sleep(0.2)
+        self.type_text(url, press_enter=True, clear_first=True)
+        time.sleep(3)
+
     def _get_action_handlers(self) -> dict:
         """Get mapping of action names to handler methods."""
         return {
+            "open_web_browser": self._action_open_web_browser,
+            "navigate": self._action_navigate,
             "click_at": self._action_click_at,
             "double_click_at": self._action_double_click_at,
             "right_click_at": self._action_right_click_at,

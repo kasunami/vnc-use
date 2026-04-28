@@ -109,6 +109,32 @@ class TestVNCControllerDisconnect:
         mock_client.disconnect.assert_called_once()
         assert controller.client is None
 
+    def test_disconnect_does_not_shutdown_reactor_by_default(self, monkeypatch):
+        """MCP servers must be able to run multiple VNC tasks in one process."""
+        monkeypatch.delenv("VNC_SHUTDOWN_REACTOR_ON_DISCONNECT", raising=False)
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+
+        with patch("src.vnc_use.backends.vnc.vnc_api.shutdown") as mock_shutdown:
+            controller.disconnect()
+
+        mock_shutdown.assert_not_called()
+
+    def test_disconnect_can_shutdown_reactor_when_opted_in(self, monkeypatch):
+        """CLI-style one-shot usage may opt into reactor shutdown."""
+        monkeypatch.setenv("VNC_SHUTDOWN_REACTOR_ON_DISCONNECT", "1")
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+
+        with patch("src.vnc_use.backends.vnc.vnc_api.shutdown") as mock_shutdown:
+            controller.disconnect()
+
+        mock_shutdown.assert_called_once()
+
     def test_disconnect_handles_no_connection(self):
         """Should handle disconnect when not connected."""
         controller = VNCController()
