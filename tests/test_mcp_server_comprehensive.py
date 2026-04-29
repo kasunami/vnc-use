@@ -10,21 +10,10 @@ from PIL import Image
 from src.vnc_use.mcp_server import (
     _wrap_agent_for_streaming,
     credential_store,
+    execute_vnc_action,
+    execute_vnc_task,
     mcp,
 )
-
-mcp_any = cast("Any", mcp)
-
-
-def get_execute_vnc_task_fn():
-    """Get the underlying execute_vnc_task function."""
-    tools = mcp_any._tool_manager._tools
-    tool = tools.get("execute_vnc_task")
-    return tool.fn if tool else None
-
-
-# Get the function at module level for use in tests
-execute_vnc_task = get_execute_vnc_task_fn()
 
 
 def create_test_png(width: int = 100, height: int = 100) -> bytes:
@@ -46,16 +35,94 @@ class TestMCPServerInitialization:
         """Credential store should be initialized."""
         assert credential_store is not None
 
-    def test_execute_vnc_task_registered(self):
+    @pytest.mark.asyncio
+    async def test_execute_vnc_task_registered(self):
         """execute_vnc_task should be registered as a tool."""
-        tools = mcp_any._tool_manager._tools
+        tools = {tool.name for tool in await mcp.list_tools()}
         assert "execute_vnc_task" in tools
+        assert "execute_vnc_policy_task" in tools
+        assert "execute_vnc_action" in tools
 
-    def test_execute_vnc_task_fn_accessible(self):
+    @pytest.mark.asyncio
+    async def test_execute_vnc_task_fn_accessible(self):
         """Should be able to access the underlying function."""
-        fn = get_execute_vnc_task_fn()
-        assert fn is not None
-        assert callable(fn)
+        tool = await mcp.get_tool("execute_vnc_task")
+        assert tool is not None
+        assert callable(tool.fn)
+
+        action_tool = await mcp.get_tool("execute_vnc_action")
+        assert action_tool is not None
+        assert callable(action_tool.fn)
+
+
+class TestExecuteVncAction:
+    """Tests for deterministic single-action execution."""
+
+    @pytest.mark.asyncio
+    async def test_returns_error_when_no_credentials(self):
+        with patch.object(credential_store, "get", return_value=None):
+            result = await execute_vnc_action(
+                hostname="unknown-host",
+                action_name="click_text_or_button",
+                arguments={"label": "Send"},
+                policy_profile="email_send",
+            )
+
+        assert result["success"] is False
+        assert "No credentials found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_policy_blocks_forbidden_action(self):
+        mock_creds = MagicMock()
+        mock_creds.server = "host::5901"
+        mock_creds.password = "pass"
+
+        with patch.object(credential_store, "get", return_value=mock_creds):
+            result = await execute_vnc_action(
+                hostname="host",
+                action_name="type_text_at",
+                arguments={"x": 1, "y": 1, "text": "unsafe"},
+                policy_profile="email_send",
+            )
+
+        assert result["success"] is False
+        assert "blocks action" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_executes_controller_action_with_policy(self):
+        mock_creds = MagicMock()
+        mock_creds.server = "host::5901"
+        mock_creds.password = "pass"
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.error = None
+        mock_result.output = None
+        mock_result.screenshot_png = create_test_png()
+
+        mock_controller = MagicMock()
+        mock_controller.execute_action.return_value = mock_result
+        mock_controller.screenshot_png.return_value = create_test_png()
+
+        with patch.object(credential_store, "get", return_value=mock_creds):
+            with patch("src.vnc_use.mcp_server.VNCController", return_value=mock_controller):
+                result = await execute_vnc_action(
+                    hostname="host",
+                    action_name="click_text_or_button",
+                    arguments={"label": "Send", "x": 100, "y": 100},
+                    policy_profile="email_send",
+                    screen_crop="0,0,500,500",
+                    wait_after_s=0,
+                )
+
+        assert result["success"] is True
+        assert result["action_name"] == "click_text_or_button"
+        assert result["policy_profile"] == "email_send"
+        mock_controller.connect.assert_called_once_with("host::5901", "pass")
+        mock_controller.execute_action.assert_called_once_with(
+            "click_text_or_button", {"label": "Send", "x": 100, "y": 100}
+        )
+        mock_controller.disconnect.assert_called_once()
 
 
 class TestExecuteVncTaskNoCredentials:

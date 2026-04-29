@@ -2,6 +2,7 @@
 """Test HITL callback integration."""
 
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 
@@ -30,12 +31,15 @@ def test_hitl_callback():
         return True
 
     # Create agent with callback
-    agent = VncUseAgent(
-        vnc_server="localhost::5901",
-        vnc_password="test",
-        hitl_mode=True,
-        hitl_callback=mock_callback,
-    )
+    with patch("src.vnc_use.agent.VNCController"):
+        with patch("src.vnc_use.planners.gemini.genai"):
+            agent = VncUseAgent(
+                vnc_server="localhost::5901",
+                vnc_password="test",
+                hitl_mode=True,
+                hitl_callback=mock_callback,
+                api_key="test_key",
+            )
 
     # Verify callback is set
     assert agent.hitl_callback is not None, "HITL callback not set"
@@ -73,12 +77,15 @@ def test_hitl_denial():
         print(f"✓ Callback denying action: {pending_calls}")
         return False
 
-    agent = VncUseAgent(
-        vnc_server="localhost::5901",
-        vnc_password="test",
-        hitl_mode=True,
-        hitl_callback=deny_callback,
-    )
+    with patch("src.vnc_use.agent.VNCController"):
+        with patch("src.vnc_use.planners.gemini.genai"):
+            agent = VncUseAgent(
+                vnc_server="localhost::5901",
+                vnc_password="test",
+                hitl_mode=True,
+                hitl_callback=deny_callback,
+                api_key="test_key",
+            )
 
     state = {
         "safety": {"action": "require_confirmation", "reason": "Test risky action"},

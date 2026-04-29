@@ -455,6 +455,85 @@ class TestVNCControllerExecuteAction:
         assert mock_client.mouseDown.call_count >= 1
         assert mock_client.mouseUp.call_count >= 1
 
+    def test_execute_action_click_text_or_button_uses_ocr_match(self):
+        """click_text_or_button should click the center of an OCR match."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+        controller._crop_offset = (100, 200)
+        controller._find_text_bbox = MagicMock(return_value=(20, 30, 80, 20))  # type: ignore[method-assign]
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action("click_text_or_button", {"label": "Template"})
+
+        assert result.success is True
+        mock_client.mouseMove.assert_any_call(160, 240)
+        controller._find_text_bbox.assert_called_once_with(  # type: ignore[attr-defined]
+            label="Template",
+            match_mode="contains",
+            occurrence=1,
+            region=None,
+        )
+
+    def test_execute_action_click_text_or_button_uses_fallback_coords(self):
+        """click_text_or_button should use fallback x/y when OCR is unavailable."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+        controller._crop_offset = (100, 200)
+        controller._find_text_bbox = MagicMock(return_value=None)  # type: ignore[method-assign]
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action(
+            "click_text_or_button", {"label": "Template", "x": 500, "y": 400}
+        )
+
+        assert result.success is True
+        mock_client.mouseMove.assert_any_call(600, 600)
+
+    def test_execute_action_click_text_or_button_passes_region_to_ocr(self):
+        """click_text_or_button should constrain OCR search by normalized region."""
+        mock_client = MagicMock()
+
+        controller = VNCController()
+        controller.client = mock_client
+        controller._screen_size = (1000, 1000)
+        controller._crop_offset = (0, 0)
+        controller._find_text_bbox = MagicMock(return_value=(20, 30, 80, 20))  # type: ignore[method-assign]
+
+        def capture_side_effect(path):
+            with open(path, "wb") as f:
+                f.write(create_test_png())
+
+        mock_client.captureScreen.side_effect = capture_side_effect
+
+        result = controller.execute_action(
+            "click_text_or_button",
+            {"label": "Inbox", "region": [0, 250, 350, 500]},
+        )
+
+        assert result.success is True
+        controller._find_text_bbox.assert_called_once_with(  # type: ignore[attr-defined]
+            label="Inbox",
+            match_mode="contains",
+            occurrence=1,
+            region=(0, 250, 350, 500),
+        )
+
     def test_execute_action_type_text_at(self):
         """Should execute type_text_at action."""
         mock_client = MagicMock()

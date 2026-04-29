@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from src.vnc_use.planners.vnc_tools import (
     VNC_TOOL_SCHEMAS,
     ClickAtTool,
+    ClickTextOrButtonTool,
     DoubleClickAtTool,
     DragAndDropTool,
     HoverAtTool,
@@ -30,6 +31,23 @@ class TestVNCToolSchemas:
         tool = ClickAtTool(x=100, y=200)
         assert tool.x == 100
         assert tool.y == 200
+
+    def test_click_text_or_button_tool(self):
+        """ClickTextOrButtonTool should support label and fallback coordinates."""
+        tool = ClickTextOrButtonTool(
+            label="Template",
+            match_mode="exact",
+            x=100,
+            y=200,
+            region=[0, 250, 350, 500],
+        )
+
+        assert tool.label == "Template"
+        assert tool.match_mode == "exact"
+        assert tool.occurrence == 1
+        assert tool.x == 100
+        assert tool.y == 200
+        assert tool.region == [0, 250, 350, 500]
 
     def test_double_click_at_tool(self):
         """DoubleClickAtTool should have x, y fields."""

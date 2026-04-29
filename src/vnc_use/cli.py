@@ -6,6 +6,7 @@ import sys
 
 from .agent import VncUseAgent
 from .credential_store import get_default_store
+from .policy import PolicyGuard, build_policy_task, get_policy_profile
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -74,6 +75,25 @@ Examples:
         help="Actions to exclude (e.g., drag_and_drop)",
     )
     parser.add_argument(
+        "--policy-profile",
+        help="Named safety/action policy profile (e.g., desktop_observe, form_fill, email_send)",
+    )
+    parser.add_argument(
+        "--allowed-text",
+        action="append",
+        default=[],
+        help="Exact text value allowed for policy-guarded typing. May be repeated.",
+    )
+    parser.add_argument(
+        "--screen-crop",
+        help="Crop screenshot/action coordinate frame as x,y,width,height for large/multi-monitor desktops.",
+    )
+    parser.add_argument(
+        "--stop-after-successful-action",
+        action="store_true",
+        help="Stop immediately after the first successfully executed action. Useful for final external-effect clicks.",
+    )
+    parser.add_argument(
         "--model-provider",
         choices=["gemini", "anthropic", "native", "openai_compatible", "local"],
         help="LLM provider to use (default: from MODEL_PROVIDER env or 'gemini')",
@@ -102,6 +122,24 @@ Examples:
 
             model_provider = args.model_provider or os.getenv("MODEL_PROVIDER", "gemini")
             logger.info(f"Using model provider: {model_provider}")
+
+            if args.screen_crop:
+                os.environ["VNC_SCREEN_CROP"] = args.screen_crop
+
+            policy_profile = get_policy_profile(args.policy_profile or os.getenv("VNC_POLICY_PROFILE"))
+            allowed_texts = list(args.allowed_text or [])
+            excluded_actions = args.excluded_actions
+            action_guard = None
+            task = args.task
+            if policy_profile is not None:
+                excluded_actions = policy_profile.excluded_actions(args.excluded_actions)
+                action_guard = PolicyGuard(policy_profile, allowed_texts=allowed_texts)
+                task = build_policy_task(args.task, policy_profile, allowed_texts=allowed_texts)
+                logger.info(
+                    "Using policy profile %s (allowed=%s)",
+                    policy_profile.name,
+                    sorted(policy_profile.allowed_actions),
+                )
 
             vnc_server = str(args.vnc or "").strip()
             vnc_password = args.password
@@ -139,11 +177,13 @@ Examples:
                 seconds_timeout=args.timeout,
                 hitl_mode=not args.no_hitl,
                 model_provider=model_provider,
-                excluded_actions=args.excluded_actions,
+                excluded_actions=excluded_actions,
+                action_guard=action_guard,
+                stop_after_successful_action=args.stop_after_successful_action,
             )
 
             # Run task
-            result = agent.run(args.task)
+            result = agent.run(task)
             final_state = result.get("final_state") if isinstance(result, dict) else None
             observation = ""
             if isinstance(final_state, dict):

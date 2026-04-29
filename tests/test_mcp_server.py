@@ -1,12 +1,8 @@
 """Tests for MCP server functionality."""
 
-from typing import Any, cast
-
 import pytest
 
 from vnc_use.mcp_server import mcp
-
-mcp_any = cast("Any", mcp)
 
 
 def test_mcp_server_initialization():
@@ -14,22 +10,32 @@ def test_mcp_server_initialization():
     assert mcp.name == "VNC Computer Use Agent"
 
 
-def test_execute_vnc_task_tool_exists():
+@pytest.mark.asyncio
+async def test_execute_vnc_task_tool_exists():
     """Test that execute_vnc_task tool is registered."""
-    # Get registered tools
-    tools = mcp_any._tool_manager._tools
+    tools = {tool.name for tool in await mcp.list_tools()}
     assert "execute_vnc_task" in tools
+    assert "execute_vnc_policy_task" in tools
+    assert "execute_vnc_action" in tools
 
 
-def test_execute_vnc_task_tool_registration():
+@pytest.mark.asyncio
+async def test_execute_vnc_task_tool_registration():
     """Test execute_vnc_task is properly registered as a FunctionTool."""
-    tools = mcp_any._tool_manager._tools
-    tool = tools.get("execute_vnc_task")
+    tool = await mcp.get_tool("execute_vnc_task")
 
     assert tool is not None
     assert tool.name == "execute_vnc_task"
     assert "VNC desktop" in tool.description
     assert "hostname" in tool.description or "vnc_server" in tool.description
+
+    policy_tool = await mcp.get_tool("execute_vnc_policy_task")
+    assert policy_tool is not None
+    assert "guardrail" in policy_tool.description.lower()
+
+    action_tool = await mcp.get_tool("execute_vnc_action")
+    assert action_tool is not None
+    assert "deterministic" in action_tool.description.lower()
 
 
 @pytest.mark.external
@@ -39,9 +45,7 @@ async def test_execute_vnc_task_without_vnc():
 
     Tests the credential lookup failure path.
     """
-    # Get the underlying function from the tool
-    tools = mcp_any._tool_manager._tools
-    tool = tools.get("execute_vnc_task")
+    tool = await mcp.get_tool("execute_vnc_task")
 
     # Skip if we can't get the function
     if not hasattr(tool, "fn"):
@@ -68,9 +72,7 @@ async def test_execute_vnc_task_parameter_validation():
 
     Tests the return value structure when no credentials found.
     """
-    # Get the underlying function from the tool
-    tools = mcp_any._tool_manager._tools
-    tool = tools.get("execute_vnc_task")
+    tool = await mcp.get_tool("execute_vnc_task")
 
     # Skip if we can't get the function
     if not hasattr(tool, "fn"):
@@ -98,7 +100,7 @@ def test_mcp_server_name():
     assert mcp.name == "VNC Computer Use Agent"
 
 
-def test_mcp_tool_manager():
+@pytest.mark.asyncio
+async def test_mcp_tool_manager():
     """Test tool manager is properly configured."""
-    assert hasattr(mcp, "_tool_manager")
-    assert len(mcp_any._tool_manager._tools) > 0
+    assert await mcp.list_tools()

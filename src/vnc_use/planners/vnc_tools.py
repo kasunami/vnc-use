@@ -20,6 +20,34 @@ class ClickAtTool(BaseModel):
     y: int = Field(description=f"Y coordinate {COORD_RANGE}")
 
 
+class ClickTextOrButtonTool(BaseModel):
+    """Click the visual center of a visible text label, button, or menu item."""
+
+    label: str = Field(description="Visible text/button label to click, e.g. 'Template' or 'Send'")
+    match_mode: Literal["contains", "exact"] = Field(
+        default="contains",
+        description="Text match strategy. Use exact for short ambiguous labels.",
+    )
+    occurrence: int = Field(default=1, ge=1, description="1-based occurrence to click if multiple labels match")
+    x: int | None = Field(
+        default=None,
+        description=f"Optional fallback X coordinate {COORD_RANGE} if OCR/text matching is unavailable",
+    )
+    y: int | None = Field(
+        default=None,
+        description=f"Optional fallback Y coordinate {COORD_RANGE} if OCR/text matching is unavailable",
+    )
+    region: list[int] | None = Field(
+        default=None,
+        description=(
+            "Optional OCR search region as [x, y, width, height] in normalized coordinates "
+            "within the current screenshot/crop"
+        ),
+        min_length=4,
+        max_length=4,
+    )
+
+
 class DoubleClickAtTool(BaseModel):
     """Double-click at specified coordinates on the screen."""
 
@@ -123,6 +151,7 @@ VNC_TOOL_SCHEMAS: dict[str, type[BaseModel]] = {
     "open_web_browser": OpenWebBrowserTool,
     "navigate": NavigateTool,
     "click_at": ClickAtTool,
+    "click_text_or_button": ClickTextOrButtonTool,
     "double_click_at": DoubleClickAtTool,
     "hover_at": HoverAtTool,
     "type_text_at": TypeTextAtTool,

@@ -35,7 +35,7 @@ class TestAnthropicPlannerInit:
 
             mock_chat.assert_called_once()
             call_kwargs = mock_chat.call_args.kwargs
-            assert call_kwargs["api_key"] == "test_key"
+            assert call_kwargs["anthropic_api_key"].get_secret_value() == "test_key"
             assert planner.excluded_actions == []
 
     def test_init_with_env_api_key(self, monkeypatch):
@@ -50,7 +50,7 @@ class TestAnthropicPlannerInit:
             AnthropicPlanner()
 
             call_kwargs = mock_chat.call_args.kwargs
-            assert call_kwargs["api_key"] == "env_api_key"
+            assert call_kwargs["anthropic_api_key"].get_secret_value() == "env_api_key"
 
     def test_init_raises_without_api_key(self, monkeypatch):
         """Should raise ValueError when no API key available."""
@@ -83,7 +83,7 @@ class TestAnthropicPlannerInit:
 
             assert planner.model == "claude-sonnet-4-20250514"
             call_kwargs = mock_chat.call_args.kwargs
-            assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+            assert call_kwargs["model_name"] == "claude-sonnet-4-20250514"
 
     def test_init_uses_env_model(self, monkeypatch):
         """Should use ANTHROPIC_MODEL env var."""

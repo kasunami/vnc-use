@@ -72,6 +72,14 @@ class TestVncUseAgentInit:
 
                 assert agent.seconds_timeout == 600
 
+    def test_init_stop_after_successful_action(self):
+        """Should support final-action mode."""
+        with patch("src.vnc_use.agent.VNCController"):
+            with patch("src.vnc_use.planners.gemini.genai"):
+                agent = VncUseAgent(stop_after_successful_action=True, api_key="test_key")
+
+                assert agent.stop_after_successful_action is True
+
     def test_init_with_hitl_disabled(self):
         """Should disable HITL mode."""
         with patch("src.vnc_use.agent.VNCController"):
@@ -420,6 +428,31 @@ class TestVncUseAgentActNode:
                 agent._act_node(state)
 
                 mock_vnc.execute_action.assert_called_once_with("click_at", {"x": 100, "y": 200})
+
+    def test_act_stop_after_successful_action_marks_done(self, mock_vnc):
+        """Final-action mode should stop after a successful action."""
+        with patch("src.vnc_use.agent.VNCController", return_value=mock_vnc):
+            with patch("src.vnc_use.planners.gemini.genai"):
+                agent = VncUseAgent(api_key="test_key", stop_after_successful_action=True)
+                agent.vnc = mock_vnc
+
+                state: CUAState = {
+                    "task": "test",
+                    "action_history": [],
+                    "step_logs": [],
+                    "pending_calls": [{"name": "click_at", "args": {"x": 100, "y": 200}}],
+                    "last_screenshot_png": b"png",
+                    "last_observation": "",
+                    "step": 1,
+                    "done": False,
+                    "safety": None,
+                    "start_time": time.time(),
+                    "error": None,
+                }
+
+                result = agent._act_node(state)
+
+                assert result["done"] is True
 
     def test_act_updates_action_history(self, mock_vnc):
         """Should update action history."""

@@ -3,12 +3,14 @@
 import io
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Literal
 
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageOps
 from vncdotool import api as vnc_api
 
 from ..types import ActionResult
@@ -93,6 +95,51 @@ def norm_y(py: int, height: int, max_coord: int = 1000) -> int:
     return round(py * max_coord / height)
 
 
+def _parse_crop(value: str, full_width: int, full_height: int) -> tuple[int, int, int, int] | None:
+    """Parse VNC_SCREEN_CROP as x,y,w,h and clamp it to the screenshot."""
+    raw = value.strip()
+    if not raw:
+        return None
+    parts = [part.strip() for part in raw.split(",")]
+    if len(parts) != 4:
+        raise ValueError("VNC_SCREEN_CROP must be formatted as x,y,width,height")
+    x, y, width, height = [int(part) for part in parts]
+    if width <= 0 or height <= 0:
+        raise ValueError("VNC_SCREEN_CROP width/height must be positive")
+    x = max(0, min(x, full_width - 1))
+    y = max(0, min(y, full_height - 1))
+    width = max(1, min(width, full_width - x))
+    height = max(1, min(height, full_height - y))
+    return x, y, width, height
+
+
+def _normalize_ocr_text(value: str) -> str:
+    """Normalize OCR text for loose UI-label matching."""
+    return " ".join(value.casefold().split())
+
+
+def _bbox_union(boxes: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
+    """Return the bounding box covering all input boxes."""
+    left = min(box[0] for box in boxes)
+    top = min(box[1] for box in boxes)
+    right = max(box[0] + box[2] for box in boxes)
+    bottom = max(box[1] + box[3] for box in boxes)
+    return left, top, right - left, bottom - top
+
+
+def _prepare_ocr_image(png_bytes: bytes) -> tuple[bytes, float]:
+    """Prepare a screenshot for OCR and return image bytes plus scale factor."""
+    image = Image.open(io.BytesIO(png_bytes)).convert("L")
+    image = ImageOps.autocontrast(image)
+    image = ImageEnhance.Contrast(image).enhance(float(os.getenv("VNC_OCR_CONTRAST", "2.0")))
+    scale = float(os.getenv("VNC_OCR_SCALE", "2.0"))
+    if scale > 1.0:
+        image = image.resize((round(image.width * scale), round(image.height * scale)))
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue(), scale
+
+
 class VNCController:
     """Controller for VNC desktop interactions.
 
@@ -120,6 +167,7 @@ class VNCController:
         """
         self.client: Any = None
         self._screen_size: tuple[int, int] | None = None
+        self._crop_offset: tuple[int, int] = (0, 0)
         self.vnc_host = vnc_host
 
         # Back-compat: coord_max maps to x/y when explicit values not provided.
@@ -194,9 +242,23 @@ class VNCController:
             self.client.captureScreen(str(tmp_path))
             png_bytes = tmp_path.read_bytes()
 
-            # Update cached screen size
+            # Update cached screen size. If VNC_SCREEN_CROP is set, expose only
+            # that region to the model and remap future coordinate actions back
+            # into full-desktop coordinates.
             img = Image.open(io.BytesIO(png_bytes))
-            self._screen_size = img.size
+            crop = _parse_crop(os.getenv("VNC_SCREEN_CROP", ""), img.width, img.height)
+            if crop:
+                x, y, width, height = crop
+                img = img.crop((x, y, x + width, y + height))
+                out = io.BytesIO()
+                img.save(out, format="PNG")
+                png_bytes = out.getvalue()
+                self._crop_offset = (x, y)
+                self._screen_size = (width, height)
+                logger.debug(f"Screenshot captured and cropped: full={img.size}, crop={crop}")
+            else:
+                self._crop_offset = (0, 0)
+                self._screen_size = img.size
             logger.debug(f"Screenshot captured: {img.size}")
 
             return png_bytes
@@ -489,30 +551,187 @@ class VNCController:
         """Handle click_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.click(px, py)
+
+    def _find_text_bbox(
+        self,
+        label: str,
+        match_mode: str = "contains",
+        occurrence: int = 1,
+        region: tuple[int, int, int, int] | None = None,
+    ) -> tuple[int, int, int, int] | None:
+        """Find a visible text label with OCR and return a crop-relative bbox.
+
+        The implementation intentionally uses the system `tesseract` binary when
+        available and otherwise returns None. This keeps OCR optional while still
+        making unavailable text matching explicit to callers.
+        """
+        if not shutil.which("tesseract"):
+            return None
+
+        target = _normalize_ocr_text(label)
+        if not target:
+            return None
+
+        screenshot, scale = _prepare_ocr_image(self.screenshot_png())
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp_path.write_bytes(screenshot)
+
+        try:
+            proc = None
+            for psm in [part.strip() for part in os.getenv("VNC_OCR_PSMS", "6,11").split(",") if part.strip()]:
+                proc = subprocess.run(
+                    ["tesseract", str(tmp_path), "stdout", "--psm", psm, "tsv"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=float(os.getenv("VNC_OCR_TIMEOUT_S", "5")),
+                )
+                if proc.returncode == 0 and proc.stdout.strip():
+                    break
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+        if proc is None:
+            return None
+        if proc.returncode != 0 or not proc.stdout.strip():
+            logger.debug("tesseract OCR failed: %s", proc.stderr.strip())
+            return None
+
+        lines: dict[tuple[str, str, str], list[tuple[str, tuple[int, int, int, int]]]] = {}
+        header_seen = False
+        for raw_line in proc.stdout.splitlines():
+            parts = raw_line.split("\t")
+            if not header_seen:
+                header_seen = True
+                continue
+            if len(parts) < 12:
+                continue
+            text = parts[11].strip()
+            if not text:
+                continue
+            try:
+                conf = float(parts[10])
+                if conf < float(os.getenv("VNC_OCR_MIN_CONF", "35")):
+                    continue
+                raw_left, raw_top, raw_width, raw_height = map(int, parts[6:10])
+                left = round(raw_left / scale)
+                top = round(raw_top / scale)
+                box_width = round(raw_width / scale)
+                box_height = round(raw_height / scale)
+            except ValueError:
+                continue
+            key = (parts[2], parts[3], parts[4])
+            lines.setdefault(key, []).append((text, (left, top, box_width, box_height)))
+
+        matches: list[tuple[int, int, int, int]] = []
+        for words in lines.values():
+            normalized_words = [_normalize_ocr_text(word) for word, _box in words]
+            for start in range(len(words)):
+                for end in range(start + 1, len(words) + 1):
+                    candidate = _normalize_ocr_text(" ".join(normalized_words[start:end]))
+                    is_match = candidate == target if match_mode == "exact" else target in candidate
+                    if is_match:
+                        bbox = _bbox_union([box for _word, box in words[start:end]])
+                        if region is not None:
+                            box_center_x = bbox[0] + round(bbox[2] / 2)
+                            box_center_y = bbox[1] + round(bbox[3] / 2)
+                            rx, ry, rw, rh = region
+                            if not (rx <= box_center_x <= rx + rw and ry <= box_center_y <= ry + rh):
+                                continue
+                        matches.append(bbox)
+                        break
+
+        if occurrence < 1:
+            occurrence = 1
+        if len(matches) < occurrence:
+            return None
+        return matches[occurrence - 1]
+
+    def _normalized_region_to_pixels(
+        self,
+        value: Any,
+        width: int,
+        height: int,
+    ) -> tuple[int, int, int, int] | None:
+        """Convert optional normalized region [x,y,w,h] to crop-relative pixels."""
+        if value is None:
+            return None
+        if not isinstance(value, list | tuple) or len(value) != 4:
+            raise ValueError("click_text_or_button region must be [x, y, width, height]")
+        x, y, region_width, region_height = [int(part) for part in value]
+        px = denorm_x(x, width, self.coord_max_x)
+        py = denorm_y(y, height, self.coord_max_y)
+        pw = denorm_x(region_width, width, self.coord_max_x)
+        ph = denorm_y(region_height, height, self.coord_max_y)
+        if pw <= 0 or ph <= 0:
+            raise ValueError("click_text_or_button region width/height must be positive")
+        return px, py, pw, ph
+
+    def _action_click_text_or_button(self, args: dict, width: int, height: int) -> None:
+        """Click the center of visible text/button label using OCR or fallback coords."""
+        label = str(args.get("label") or "").strip()
+        if not label:
+            raise ValueError("click_text_or_button requires a non-empty label")
+
+        bbox = self._find_text_bbox(
+            label=label,
+            match_mode=str(args.get("match_mode") or "contains"),
+            occurrence=int(args.get("occurrence") or 1),
+            region=self._normalized_region_to_pixels(args.get("region"), width, height),
+        )
+        if bbox is not None:
+            left, top, box_width, box_height = bbox
+            px = self._crop_offset[0] + left + round(box_width / 2)
+            py = self._crop_offset[1] + top + round(box_height / 2)
+            self.click(px, py)
+            return
+
+        if args.get("x") is not None and args.get("y") is not None:
+            px = denorm_x(int(args["x"]), width, self.coord_max_x) + self._crop_offset[0]
+            py = denorm_y(int(args["y"]), height, self.coord_max_y) + self._crop_offset[1]
+            logger.info("OCR target %r not found; using fallback coordinates", label)
+            self.click(px, py)
+            return
+
+        raise ValueError(
+            f"Could not find visible text/button label {label!r}. "
+            "Install tesseract OCR or provide fallback x/y coordinates."
+        )
 
     def _action_double_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle double_click_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.double_click(px, py)
 
     def _action_right_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle right_click_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.click(px, py, button=3)
 
     def _action_triple_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle triple_click_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.triple_click(px, py)
 
     def _action_middle_click_at(self, args: dict, width: int, height: int) -> None:
         """Handle middle_click_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.middle_click(px, py)
 
     def _action_left_mouse_down(self, args: dict, width: int, height: int) -> None:
@@ -527,12 +746,16 @@ class VNCController:
         """Handle hover_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.move(px, py)
 
     def _action_type_text_at(self, args: dict, width: int, height: int) -> None:
         """Handle type_text_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.click(px, py)  # Focus first
         self.type_text(
             args["text"],
@@ -567,6 +790,8 @@ class VNCController:
         """Handle scroll_at action."""
         px = denorm_x(int(args["x"]), width, self.coord_max_x)
         py = denorm_y(int(args["y"]), height, self.coord_max_y)
+        px += self._crop_offset[0]
+        py += self._crop_offset[1]
         self.move(px, py)
         self.scroll(args["direction"], args.get("magnitude", 800))
 
@@ -595,6 +820,11 @@ class VNCController:
         x0 = denorm_x(int(start_x), width, self.coord_max_x)
         x1 = denorm_x(int(end_x), width, self.coord_max_x)
         y1 = denorm_y(int(end_y), height, self.coord_max_y)
+        x_offset, y_offset = self._crop_offset
+        x0 += x_offset
+        x1 += x_offset
+        y0 += y_offset
+        y1 += y_offset
         self.drag_and_drop(x0, y0, x1, y1)
 
     def _action_wait_5_seconds(self, args: dict, width: int, height: int) -> None:
@@ -627,6 +857,7 @@ class VNCController:
             "open_web_browser": self._action_open_web_browser,
             "navigate": self._action_navigate,
             "click_at": self._action_click_at,
+            "click_text_or_button": self._action_click_text_or_button,
             "double_click_at": self._action_double_click_at,
             "right_click_at": self._action_right_click_at,
             "triple_click_at": self._action_triple_click_at,

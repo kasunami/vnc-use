@@ -41,6 +41,8 @@ class VncUseAgent:
         hitl_callback: Callable[[dict, list], Coroutine[Any, Any, bool]] | None = None,
         api_key: str | None = None,
         model_provider: str = "gemini",
+        action_guard: Any | None = None,
+        stop_after_successful_action: bool = False,
     ) -> None:
         """Initialize VNC Use Agent.
 
@@ -72,10 +74,14 @@ class VncUseAgent:
         self.seconds_timeout = seconds_timeout
         self.hitl_mode = hitl_mode
         self.hitl_callback = hitl_callback
+        self.action_guard = action_guard
+        self.stop_after_successful_action = stop_after_successful_action
 
         # Default exclusions for browser-specific actions we cannot implement via VNC
         if excluded_actions is None:
             excluded_actions = [
+                "open_web_browser",  # Can open desktop launcher/run dialogs unexpectedly
+                "navigate",  # Browser URL navigation should be an explicit policy choice
                 "go_back",  # Requires browser history API
                 "go_forward",  # Requires browser history API
                 "search",  # Requires browser search API
@@ -155,7 +161,7 @@ class VncUseAgent:
             "hitl_gate",
             self._route_after_hitl,
         )
-        builder.add_edge("act", "propose")
+        builder.add_conditional_edges("act", self._route_after_act)
 
         # Compile without checkpointer for now (TODO: fix checkpointing)
         return builder.compile()
@@ -208,6 +214,10 @@ class VncUseAgent:
             # Extract function calls
             function_calls = self.planner.extract_function_calls(response)
             logger.info(f"Received {len(function_calls)} function call(s)")
+
+            if self.action_guard is not None:
+                for function_call in function_calls:
+                    self.action_guard.validate_action(function_call)
 
             # Extract safety decision
             safety_decision = self.planner.extract_safety_decision(response)
@@ -267,6 +277,9 @@ class VncUseAgent:
         function_name = call["name"]
         args = call["args"]
 
+        if self.action_guard is not None:
+            self.action_guard.validate_action(call)
+
         logger.info(f"Executing: {function_name}({args})")
 
         # Format action text
@@ -319,6 +332,7 @@ class VncUseAgent:
                 "last_screenshot_png": result.screenshot_png,
                 "action_history": updated_history,
                 "step_logs": updated_step_logs,
+                "done": self.stop_after_successful_action and not result.error,
             }
 
         except Exception as e:
@@ -449,6 +463,12 @@ class VncUseAgent:
             return END
 
         return "act"
+
+    def _route_after_act(self, state: CUAState) -> str:
+        """Route after executing an action."""
+        if state["done"]:
+            return END
+        return "propose"
 
     def run(self, task: str, _thread_id: str | None = None) -> dict[str, Any]:
         """Run the agent on a task.

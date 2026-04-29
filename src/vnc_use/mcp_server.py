@@ -9,15 +9,19 @@ as tool parameters to avoid exposing them to LLMs.
 """
 
 import base64
+from contextlib import contextmanager
 import logging
 import os
+import time
 from typing import Any
 
 from fastmcp import Context, FastMCP
 
 from .agent import VncUseAgent
+from .backends.vnc import VNCController
 from .credential_store import VNCCredentials, get_default_store
 from .planners.gemini import compress_screenshot
+from .policy import PolicyGuard, build_policy_task, get_policy_profile
 from .types import CUAState
 
 logger = logging.getLogger(__name__)
@@ -38,6 +42,21 @@ def _build_error_result(error_msg: str) -> dict[str, Any]:
         "run_dir": None,
         "steps": 0,
     }
+
+
+@contextmanager
+def _temporary_env(name: str, value: str | None) -> Any:
+    """Temporarily set an environment variable for one run."""
+    old_value = os.environ.get(name)
+    if value is not None:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if old_value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = old_value
 
 
 async def _lookup_credentials(
@@ -117,6 +136,10 @@ async def execute_vnc_task(
     task: str,
     step_limit: int = 40,
     timeout: int = 300,
+    policy_profile: str | None = None,
+    allowed_texts: list[str] | None = None,
+    screen_crop: str | None = None,
+    stop_after_successful_action: bool = False,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Execute a task on a VNC desktop with streaming progress updates.
@@ -134,6 +157,10 @@ async def execute_vnc_task(
         task: Task description to execute
         step_limit: Maximum number of steps (default: 40)
         timeout: Timeout in seconds (default: 300)
+        policy_profile: Optional named action policy profile. Prefer this for MC workflows.
+        allowed_texts: Exact text strings allowed by exact-text typing profiles.
+        screen_crop: Optional x,y,width,height crop for large/multi-monitor desktops.
+        stop_after_successful_action: Stop immediately after the first successful action.
         ctx: FastMCP context for streaming (injected automatically)
 
     Returns:
@@ -167,6 +194,19 @@ async def execute_vnc_task(
         model_provider = os.getenv("MODEL_PROVIDER", "gemini")
         logger.info(f"Using model provider: {model_provider}")
 
+        profile = get_policy_profile(policy_profile or os.getenv("VNC_POLICY_PROFILE"))
+        guard = None
+        excluded_actions = None
+        task_for_model = task
+        if profile is not None:
+            allowed_text_values = list(allowed_texts or [])
+            guard = PolicyGuard(profile, allowed_texts=allowed_text_values)
+            excluded_actions = profile.excluded_actions()
+            task_for_model = build_policy_task(task, profile, allowed_texts=allowed_text_values)
+            if ctx:
+                await ctx.info(f"Using policy profile: {profile.name}")
+                await ctx.info(f"Allowed actions: {sorted(profile.allowed_actions)}")
+
         # Create agent with HITL enabled and elicitation callback
         agent = VncUseAgent(
             vnc_server=credentials.server,
@@ -176,6 +216,9 @@ async def execute_vnc_task(
             hitl_mode=True,
             hitl_callback=_create_hitl_callback(ctx),
             model_provider=model_provider,
+            excluded_actions=excluded_actions,
+            action_guard=guard,
+            stop_after_successful_action=stop_after_successful_action,
         )
 
         # Monkey-patch agent nodes to add streaming
@@ -183,7 +226,8 @@ async def execute_vnc_task(
             agent = _wrap_agent_for_streaming(agent, ctx, step_limit)
 
         # Execute task
-        result = agent.run(task)
+        with _temporary_env("VNC_SCREEN_CROP", screen_crop):
+            result = agent.run(task_for_model)
 
         # Report completion
         if ctx:
@@ -195,10 +239,114 @@ async def execute_vnc_task(
             "run_dir": result.get("run_dir"),
             "steps": result.get("final_state", {}).get("step", 0),
             "error": result.get("error") or result.get("final_state", {}).get("error"),
+            "observation": result.get("final_state", {}).get("last_observation"),
+            "policy_profile": profile.name if profile else None,
         }
 
     except Exception as e:
         error_msg = f"Task execution failed: {e}"
+        logger.error(error_msg, exc_info=True)
+        if ctx:
+            await ctx.info(f"✗ Error: {error_msg}")
+        return _build_error_result(error_msg)
+
+
+@mcp.tool()
+async def execute_vnc_policy_task(
+    hostname: str,
+    task: str,
+    policy_profile: str,
+    step_limit: int = 20,
+    timeout: int = 180,
+    allowed_texts: list[str] | None = None,
+    screen_crop: str | None = None,
+    stop_after_successful_action: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Execute a VNC task with a named guardrail profile.
+
+    MC should prefer this tool for durable workflows. It applies a reusable
+    action budget, augments the task with policy instructions, and validates
+    model-proposed actions before execution.
+    """
+    return await execute_vnc_task(
+        hostname=hostname,
+        task=task,
+        step_limit=step_limit,
+        timeout=timeout,
+        policy_profile=policy_profile,
+        allowed_texts=allowed_texts,
+        screen_crop=screen_crop,
+        stop_after_successful_action=stop_after_successful_action,
+        ctx=ctx,
+    )
+
+
+@mcp.tool()
+async def execute_vnc_action(
+    hostname: str,
+    action_name: str,
+    arguments: dict[str, Any] | None = None,
+    policy_profile: str | None = None,
+    allowed_texts: list[str] | None = None,
+    screen_crop: str | None = None,
+    wait_after_s: float = 0.5,
+    include_screenshot: bool = False,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Execute one deterministic VNC action under an optional policy profile.
+
+    MC campaign runners should use this for known UI controls after a verifier
+    has established the current state. It avoids spending a VLM turn to rediscover
+    fixed buttons while still applying the same vnc-use policy guardrails.
+    """
+    if ctx:
+        await ctx.info(f"Executing deterministic VNC action: {action_name}")
+        await ctx.info(f"Looking up credentials for hostname: {hostname}")
+
+    try:
+        credentials, error_result = await _lookup_credentials(hostname, ctx)
+        if error_result:
+            return error_result
+        if credentials is None:
+            return _build_error_result(f"Credentials lookup failed for hostname '{hostname}'")
+
+        args = dict(arguments or {})
+        profile = get_policy_profile(policy_profile or os.getenv("VNC_POLICY_PROFILE"))
+        if profile is not None:
+            PolicyGuard(profile, allowed_texts=list(allowed_texts or [])).validate_action(
+                {"name": action_name, "args": args}
+            )
+
+        controller = VNCController(vnc_host=hostname)
+        with _temporary_env("VNC_SCREEN_CROP", screen_crop):
+            controller.connect(credentials.server, credentials.password)
+            try:
+                controller.screenshot_png()
+                result = controller.execute_action(action_name, args)
+                if wait_after_s > 0:
+                    time.sleep(min(float(wait_after_s), 10.0))
+                    result.screenshot_png = controller.screenshot_png()
+            finally:
+                controller.disconnect()
+
+        payload: dict[str, Any] = {
+            "success": bool(result.success),
+            "error": result.error,
+            "action_name": action_name,
+            "policy_profile": profile.name if profile else None,
+            "screen_crop": screen_crop,
+        }
+        if result.output:
+            payload["output"] = result.output
+        if include_screenshot and result.screenshot_png:
+            payload["screenshot_base64"] = base64.b64encode(result.screenshot_png).decode("ascii")
+        if ctx:
+            await ctx.info("✓ Action completed" if result.success else f"✗ Action failed: {result.error}")
+        return payload
+
+    except Exception as e:
+        error_msg = f"Action execution failed: {e}"
         logger.error(error_msg, exc_info=True)
         if ctx:
             await ctx.info(f"✗ Error: {error_msg}")

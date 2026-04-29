@@ -133,6 +133,22 @@ def test_openai_compatible_payload_tuning_defaults(monkeypatch):
     assert captured["timeout"] == 60.0
 
 
+def test_openai_compatible_rejects_invalid_tool_args(monkeypatch):
+    """Malformed local-VLM tool args should not reach the VNC backend."""
+    monkeypatch.setenv("OPENAI_MODEL", "test-vlm")
+    planner = OpenAICompatiblePlanner()
+    response = {
+        "parsed": {
+            "actions": [
+                {"name": "type_text_at", "args": {"text": "missing coordinates"}},
+            ]
+        }
+    }
+
+    with pytest.raises(ValueError, match="invalid arguments for type_text_at"):
+        planner.extract_function_calls(response)
+
+
 def test_agent_invalid_provider():
     """Test that agent raises ValueError for invalid provider."""
     with pytest.raises(ValueError, match="Unknown model_provider"):

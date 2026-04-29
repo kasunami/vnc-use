@@ -77,12 +77,21 @@ class OpenAICompatiblePlanner(BasePlanner):
     def _chat_completions(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         url = f"{self.base_url}/chat/completions"
 
+        max_tokens = int(os.getenv("OPENAI_MAX_TOKENS") or "300")
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS") or "300"),
+            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         }
+
+        # Qwen-style thinking models can spend the whole output budget in
+        # hidden/visible reasoning before producing the JSON action object.
+        # These hints are ignored by servers that do not support them.
+        if os.getenv("OPENAI_DISABLE_THINKING", "1").lower() not in {"0", "false", "no"}:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+            payload["reasoning"] = {"effort": "none"}
 
         # Optional Mesh-Router pinning hints (non-OpenAI fields accepted by MR).
         pin_worker = os.getenv("MESH_PIN_WORKER") or os.getenv("OPENAI_PIN_WORKER")
@@ -152,6 +161,11 @@ class OpenAICompatiblePlanner(BasePlanner):
             f"- Excluded actions: {excluded}\n"
             "- For browser tasks, prefer open_web_browser then navigate instead of clicking desktop icons.\n"
             "- Coordinates x/y must be integers in the normalized range 0-999 (top-left is 0,0).\n"
+            "- Prefer click_text_or_button for visible text labels, buttons, tabs, and menu items. "
+            "Provide label plus fallback x/y when you can estimate the center; include region "
+            "[x,y,width,height] when the same label may appear elsewhere.\n"
+            "- When clicking a button, menu item, icon, or text label, aim for the visual center of the target; "
+            "if the target has text, click the center of the text label.\n"
             "- Prefer 1-2 actions per step. If the task is complete, set done=true and actions=[].\n"
             "- For read-only inspection tasks, describe the screenshot, set done=true, and actions=[].\n"
             "- Do not include any keys other than observation/done/actions.\n"
@@ -161,7 +175,12 @@ class OpenAICompatiblePlanner(BasePlanner):
         user_content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": "Here is the current screenshot. What should I do next?",
+                "text": (
+                    "/no_think\n"
+                    "Return one JSON object only. Start with '{' and end with '}'. "
+                    "No chain-of-thought, no markdown, no explanation.\n"
+                    "Here is the current screenshot. What should I do next?"
+                ),
             },
             {
                 "type": "image_url",
@@ -219,6 +238,7 @@ class OpenAICompatiblePlanner(BasePlanner):
             return []
 
         calls: list[dict[str, Any]] = []
+        tool_schemas = get_vnc_tools(self.excluded_actions)
         for action in actions:
             if not isinstance(action, dict):
                 continue
@@ -228,6 +248,13 @@ class OpenAICompatiblePlanner(BasePlanner):
                 continue
             if not isinstance(args, dict):
                 continue
+            schema = tool_schemas.get(name)
+            if schema is None:
+                continue
+            try:
+                schema(**args)
+            except Exception as exc:
+                raise ValueError(f"Model proposed invalid arguments for {name}: {exc}") from exc
 
             calls.append({"name": name, "args": args})
 

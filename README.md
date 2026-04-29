@@ -394,6 +394,16 @@ uv run vnc-use-mcp
 
 The server exposes a single tool for executing VNC tasks.
 
+For durable workflows, prefer the guarded `execute_vnc_policy_task` tool or pass
+`policy_profile` to `execute_vnc_task`. Policy profiles define per-step action
+budgets such as `desktop_observe`, `click_only`, `form_fill`,
+`email_template_select`, `email_recipient_fill`, `email_pre_send_verify`, and
+`email_send`. See [POLICY_PROFILES.md](POLICY_PROFILES.md).
+
+For visible buttons/menu items/tabs, prefer `click_text_or_button` over raw
+coordinates. It uses `tesseract` OCR when installed and can fall back to
+explicit center coordinates when OCR is unavailable.
+
 **Parameters:**
 - `hostname` (required): VNC server hostname for credential lookup (e.g., "vnc-desktop", "vnc-prod")
 - `task` (required): Task description to execute
