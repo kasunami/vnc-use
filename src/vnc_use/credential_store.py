@@ -17,9 +17,8 @@ try:
     from keyring.errors import PasswordDeleteError
 except ImportError:
 
-    class PasswordDeleteError(Exception):
+    class PasswordDeleteError(Exception):  # type: ignore[no-redef]
         """Fallback when keyring is not installed."""
-
 
 logger = logging.getLogger(__name__)
 

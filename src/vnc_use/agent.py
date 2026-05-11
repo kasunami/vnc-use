@@ -205,7 +205,7 @@ class VncUseAgent:
                 try:
                     self.run_logger.log_response(step, response)  # type: ignore[union-attr]
                 except Exception:
-                    pass
+                    logger.exception("Failed to log model response")
 
             # Extract text observation/reasoning
             observation = self.planner.extract_text(response)

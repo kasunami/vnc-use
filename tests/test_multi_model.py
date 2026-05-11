@@ -8,8 +8,8 @@ import pytest
 
 from vnc_use.agent import VncUseAgent
 from vnc_use.planners import AnthropicPlanner, GeminiPlanner, OpenAICompatiblePlanner
-from vnc_use.planners.openai_compatible import _first_json_object
 from vnc_use.planners.base import BasePlanner
+from vnc_use.planners.openai_compatible import _first_json_object
 
 
 def test_gemini_planner_implements_base():

@@ -116,9 +116,9 @@ class OpenAICompatiblePlanner(BasePlanner):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")  # noqa: S310
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:  # noqa: S310
                 body = resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
@@ -188,7 +188,7 @@ class OpenAICompatiblePlanner(BasePlanner):
             },
         ]
 
-        messages = [
+        messages: list[dict[str, Any]] = [
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ]

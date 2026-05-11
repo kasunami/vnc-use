@@ -7,7 +7,6 @@ import argparse
 import asyncio
 import json
 import socket
-import sys
 from dataclasses import asdict, dataclass
 
 from fastmcp import Client

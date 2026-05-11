@@ -40,14 +40,14 @@ class AnthropicPlanner(BasePlanner):
             model: Model name (defaults to claude-haiku-4-5-20251015)
         """
         self.excluded_actions = excluded_actions or []
-        self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        self.model: str = model or os.getenv("ANTHROPIC_MODEL") or DEFAULT_MODEL
 
         # Initialize Anthropic client via LangChain
         api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
-        self.llm = ChatAnthropic(
+        self.llm = ChatAnthropic(  # type: ignore[call-arg]
             model_name=self.model,
             anthropic_api_key=SecretStr(api_key),
             temperature=0.0,

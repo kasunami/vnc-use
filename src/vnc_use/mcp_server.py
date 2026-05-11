@@ -9,10 +9,10 @@ as tool parameters to avoid exposing them to LLMs.
 """
 
 import base64
-from contextlib import contextmanager
 import logging
 import os
 import time
+from contextlib import contextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP

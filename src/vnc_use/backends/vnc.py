@@ -219,7 +219,7 @@ class VNCController:
                 try:
                     vnc_api.shutdown()
                 except Exception:
-                    pass
+                    logger.exception("Failed to shut down VNC reactor")
             logger.info("VNC connection closed")
 
     def screenshot_png(self) -> bytes:
@@ -245,7 +245,7 @@ class VNCController:
             # Update cached screen size. If VNC_SCREEN_CROP is set, expose only
             # that region to the model and remap future coordinate actions back
             # into full-desktop coordinates.
-            img = Image.open(io.BytesIO(png_bytes))
+            img: Image.Image = Image.open(io.BytesIO(png_bytes))
             crop = _parse_crop(os.getenv("VNC_SCREEN_CROP", ""), img.width, img.height)
             if crop:
                 x, y, width, height = crop
@@ -583,8 +583,8 @@ class VNCController:
         try:
             proc = None
             for psm in [part.strip() for part in os.getenv("VNC_OCR_PSMS", "6,11").split(",") if part.strip()]:
-                proc = subprocess.run(
-                    ["tesseract", str(tmp_path), "stdout", "--psm", psm, "tsv"],
+                proc = subprocess.run(  # noqa: S603
+                    ["tesseract", str(tmp_path), "stdout", "--psm", psm, "tsv"],  # noqa: S607
                     check=False,
                     capture_output=True,
                     text=True,
